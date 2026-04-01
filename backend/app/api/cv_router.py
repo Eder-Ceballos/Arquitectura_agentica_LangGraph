@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException
 
 # --- NUEVOS IMPORTS PARA LA CONEXIÓN ---
 from agents.tools.cv_parser import parse_cv  # Nuestra herramienta de extracción
@@ -16,7 +16,10 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 @router.post("/upload-cv/", status_code=201)
-async def upload_cv(user_id: str, file: UploadFile = File(...)):
+async def upload_cv(
+    user_id: str = Form(...), # <-- Cambia esto para que use Form(...)
+    file: UploadFile = File(...)
+):
     # 1. Validaciones básicas (Extensión y Tamaño)
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:

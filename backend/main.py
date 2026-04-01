@@ -1,8 +1,22 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # <-- ¡ESTA ES LA LÍNEA MÁGICA QUE FALTA!
+
 from agents.graph import app_graph  # Lo que dejó tu equipo
 from app.api.cv_router import router as cv_router # Lo que creamos nosotros
 
 app = FastAPI(title="IAGentes API - Multi-Agente Platform")
+
+#--------------AGREGADO PARA VER SI FUNCIONA-----------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"], # Permite la web de tu amigo
+    allow_credentials=True,
+    allow_methods=["*"], # Permite GET, POST, etc.
+    allow_headers=["*"], # Permite todos los encabezados
+)
+#-----------HASTA AQUI LLEGA EL HDP
+
+
 
 # 1. Registramos nuestro nuevo router para carga de archivos
 # Esto nos da el endpoint: POST /api/v1/candidates/upload-cv/
