@@ -2,6 +2,7 @@ fastapi
 uvicorn
 langgraph
 langchain-openai
+pydantic
 pydantic-settings
 sqlalchemy
 psycopg2-binary
