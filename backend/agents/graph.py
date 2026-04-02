@@ -1,23 +1,11 @@
-from langgraph.graph import StateGraph, END
-from .state import AgentState
-from .nodes.profile_agent import profile_node
-from .nodes.vacancy_agent import vacancy_node
-# ... importar los demás nodos
+from langgraph.graph import StateGraph
+from agents.state import AgentState
+from agents.nodes.validator import universal_validator_node
 
-def create_graph():
-    workflow = StateGraph(AgentState)
+# Inicializar grafo
+workflow = StateGraph(AgentState)
 
-    # Añadir los 5 agentes como nodos
-    workflow.add_node("profile_analyzer", profile_node)
-    workflow.add_node("vacancy_scraper", vacancy_node)
-    # ... añadir advisor, application y tracker
+# Crear los nodos reutilizando la función universal
+workflow.add_node("validador_candidato", lambda state: universal_validator_node(state, target="profile"))
+workflow.add_node("validador_empresa", lambda state: universal_validator_node(state, target="job"))
 
-    # Definir las conexiones (Aristas)
-    workflow.set_entry_point("profile_analyzer")
-    workflow.add_edge("profile_analyzer", "vacancy_scraper")
-    # ... definir el resto del camino hacia END
-
-    return workflow.compile()
-
-# Agente Base compilado listo para ser usado por el Orquestador (FastAPI)
-app_graph = create_graph()
