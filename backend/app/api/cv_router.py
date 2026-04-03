@@ -45,7 +45,7 @@ async def upload_cv(
         initial_state = {
             "user_id": user_id,
             "file_id": file_id,
-            "cv_raw_text": extracted_text,
+            "texto_cv": extracted_text,
             "logs": [f"Archivo {file.filename} recibido y procesado correctamente."],
             "current_step": "parsing"
         }
