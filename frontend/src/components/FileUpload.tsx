@@ -55,19 +55,31 @@ export const FileUpload = () => {
   const startAnalysis = async () => {
     if (!file) return;
     
-    // 1. Cambiamos la UI al modo "Procesando"
     setStatus('analyzing');
 
-    /* TODO: Implementar lógica real aquí:
-       const formData = new FormData();
-       formData.append('file', file);
-       const res = await fetch('http://localhost:8000/analyze', { method: 'POST', body: formData });
-    */
+    try {
+      const formData = new FormData();
+      formData.append('user_id', 'thomas-01'); //LINEA EXTRA PARA TESTEO TIENE MI NOMBREEEEEEEEEEEEE
+      formData.append('file', file);
 
-    // Simulación temporal de procesamiento (4 segundos)
-    setTimeout(() => {
+      // Llamada a TU backend de FastAPI
+      const response = await fetch('http://localhost:8000/api/v1/candidates/upload-cv/', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('Error en el servidor');
+
+      const data = await response.json();
+      console.log("Respuesta de los Agentes:", data);
+      
       setStatus('done');
-    }, 4000);
+      
+    } catch (error) {
+      console.error("Error al conectar con los agentes:", error);
+      setStatus('idle');
+      alert("Error al procesar el CV. ¿Está el backend encendido?");
+    }
   };
 
   return (

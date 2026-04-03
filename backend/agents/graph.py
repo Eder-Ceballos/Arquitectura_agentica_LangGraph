@@ -2,75 +2,69 @@ from typing import Literal
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents.state import AgentState
+# Mantenemos las rutas de HU-00
+from .state import AgentState
+from .nodes.profile_agent import profile_node
+from .nodes.vacancy_agent import vacancy_node
 from agents.nodes.validator import universal_validator_node
-# Importar los stubs o interfaces de tus compañeros
-# from agents.nodes.extractor import extraer_perfil_node 
-# from agents.nodes.persistence import guardar_perfil_db_node
 
-# 1. PERSISTENCIA DE ESTADO (Checkpointer)
-# Esto es lo que permite que el grafo "duerma" mientras el usuario llena el form
+# 1. PERSISTENCIA (El cerebro que recuerda en qué paso se quedó Eder)
 memory = MemorySaver()
 
-# 2. NODOS DE INTERFAZ (Stubs para tus compañeros)
-def nodo_extractor_wrapper(state: AgentState):
-    # Aquí irá la lógica de tu compañero. Por ahora es un "passthrough"
-    print("--- EJECUTANDO EXTRACCIÓN ---")
-    return state
-
-def nodo_persistencia_wrapper(state: AgentState):
-    # Aquí irá la lógica de base de datos
-    print("--- GUARDANDO EN BASE DE DATOS ---")
-    return state
-
+# 2. NODOS DE CONTROL
 def nodo_pausa_formulario(state: AgentState):
-    """
-    Nodo de interrupción. No hace nada, solo marca el punto de pausa.
-    """
+    """Punto de interrupción. Aquí el backend 'suelta' el control al frontend."""
     return state
 
-# 3. LÓGICA DE RUTEO (Conditional Edge)
-def router_validacion(state: AgentState) -> Literal["persistencia", "pausa_formulario"]:
+# 3. LÓGICA DE RUTEO (El "Checkpost")
+def router_validacion(state: AgentState) -> Literal["vacancy_scraper", "pausa_formulario"]:
     """
-    Decide el camino basándose en el booleano 'es_valido' que generó Gemini.
+    Solo si 'es_valido' es True, permitimos el paso a la búsqueda de vacantes.
+    De lo contrario, forzamos la parada en el nodo de pausa.
     """
     if state.get("es_valido", False):
-        return "persistencia"
+        return "vacancy_scraper"
+    
+    print(f"⚠️ Validación fallida. Campos pendientes: {state.get('campos_a_corregir')}")
     return "pausa_formulario"
 
 # 4. CONSTRUCCIÓN DEL GRAFO
 workflow = StateGraph(AgentState)
 
-# Añadir Nodos
-workflow.add_node("extraccion", nodo_extractor_wrapper)
+# Registramos todos los agentes y nodos de control
+workflow.add_node("profile_analyzer", profile_node)      # Extracción (HU-00)
 workflow.add_node("validacion", lambda state: universal_validator_node(state, target="profile"))
 workflow.add_node("pausa_formulario", nodo_pausa_formulario)
-workflow.add_node("persistencia", nodo_persistencia_wrapper)
+workflow.add_node("vacancy_scraper", vacancy_node)      # Siguiente paso (HU-00)
 
-# Definir Flujo
-workflow.set_entry_point("extraccion")
-workflow.add_edge("extraccion", "validacion")
+# --- FLUJO LÓGICO DE MAGNETO ---
 
-# El gran "Portero" (Arista condicional)
+# Punto de inicio: Analizamos el CV y el form inicial
+workflow.set_entry_point("profile_analyzer")
+
+# Del análisis vamos directo a la VALIDACIÓN
+workflow.add_edge("profile_analyzer", "validacion")
+
+# El router decide el destino tras validar
 workflow.add_conditional_edges(
     "validacion",
     router_validacion,
     {
-        "persistencia": "persistencia",
+        "vacancy_scraper": "vacancy_scraper",
         "pausa_formulario": "pausa_formulario"
     }
 )
 
-# Reentrada: Cuando el usuario corrija, volvemos a validar
+# REENTRADA CRÍTICA: 
+# Cuando el usuario envíe el formulario desde React, el flujo 
+# NO va a vacantes, sino que VUELVE a validación.
 workflow.add_edge("pausa_formulario", "validacion")
 
-# Fin del flujo de perfil
-workflow.add_edge("persistencia", END)
+# Si todo sale bien y pasa a vacantes, ahí termina el flujo de esta HU
+workflow.add_edge("vacancy_scraper", END)
 
-# 5. COMPILACIÓN DEFINITIVA
-# 'interrupt_before' es la clave para que el backend suelte el control al frontend
+# 5. COMPILACIÓN CON INTERRUPCIÓN
 app = workflow.compile(
     checkpointer=memory,
-    interrupt_before=["pausa_formulario"]
+    interrupt_before=["pausa_formulario"] # El grafo se detiene justo aquí
 )
-
