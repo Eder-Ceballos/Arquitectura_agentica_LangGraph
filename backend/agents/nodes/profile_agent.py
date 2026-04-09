@@ -1,6 +1,6 @@
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
-from agents.state import AgentState, PerfilCandidato
+from agents.state import AgentState, PerfilNormalizado
 from dotenv import load_dotenv
 
 # Cargamos la API KEY del archivo .env
@@ -17,7 +17,7 @@ llm = ChatGoogleGenerativeAI(
 
 # 2. Vinculamos el modelo con el "Molde" de Pydantic 
 # Esto obliga a Gemini a responder ÚNICAMENTE con el formato JSON dado.
-structured_llm = llm.with_structured_output(PerfilCandidato)
+structured_llm = llm.with_structured_output(PerfilNormalizado)
 
 def profile_node(state: AgentState):
     print("🧠 [Agente de Perfil] Analizando texto del CV con Gemini...")

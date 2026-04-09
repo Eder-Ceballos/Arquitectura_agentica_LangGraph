@@ -1,27 +1,84 @@
-from typing import List, Optional, TypedDict
-from pydantic import BaseModel, Field
+from typing import Annotated, TypedDict, List, Optional, Any
+import operator
 
-# 1. Molde
-class PerfilCandidato(BaseModel):
-    Id_perfil: int = Field(description="ID numérico único para el perfil")
-    nombre: str = Field(description="Nombre completo del candidato")
-    telefono: str = Field(description="Número de teléfono de contacto")
-    email: str = Field(description="Dirección de correo electrónico")
-    profesion: str = Field(description="Título profesional o área de estudio")
-    descripcion: str = Field(description="Breve resumen del perfil profesional")
-    habilidades: List[str] = Field(description="Lista de habilidades técnicas y blandas")
-    años_experiencia: int = Field(description="Años de experiencia total en números")
-    sectores: str = Field(description="Sectores de interés (ej: software, informática)")
-    cargo: str = Field(description="Cargo actual o último desempeñado")
-    salario: float = Field(description="Pretensión salarial o último salario")
-    educativo: str = Field(description="Nivel educativo (ej: profesional, técnico)")
-    disponibilidad: str = Field(description="Disponibilidad horaria (ej: tiempo completo)")
-    discapacidades: str = Field(description="Información sobre discapacidades si aplica")
-    ubicacion: str = Field(description="Ciudad y país de residencia")
+# --- 1. Estructura de Datos del Candidato ---
+class PerfilNormalizado(TypedDict):
+    id_perfil: Optional[int]
+    nombre: str
+    telefono: str
+    email: str
+    profesion: str
+    descripcion: str
+    habilidades: List[str]
+    años_experiencia: int
+    sectores: str
+    cargo: str
+    salario: float
+    educativo: str
+    disponibilidad: str
+    discapacidades: str
+    ubicacion: str
 
+# --- 2. Estructura de Datos de la Empresa ---
+class VacanteNormalizada(TypedDict):
+    id_vacante: Optional[int]
+    cargo: str
+    empresa: str
+    email: str
+    requisitos: List[str]
+    descripcion: str
+    habilidades: List[str]
+    palabras_clave: List[str]
 
+# --- 3. Estructuras de Proceso (Recomendación, Postulación, Seguimiento) ---
+class Recomendacion(TypedDict):
+    id_vacante: int
+    nombre_puesto: str
+    empresa: str
+    puntuacion: float
+    link_detalle: str
+    comentario: str
+    habilidades_coincidentes: List[str]
+    habilidades_faltantes: List[str]
+
+class Postulacion(TypedDict):
+    postulacion_id: int
+    estado: str
+
+class Seguimiento(TypedDict):
+    postulacion_id: int
+    fase_actual: str
+    estado_visual: str
+    mensaje_ia: str
+    dias_desde_postulacion: int
+    siguiente_paso: str
+
+# --- 4. ESTADO GLOBAL DEL AGENTE (AgentState) ---
 class AgentState(TypedDict):
-    texto_cv: str                 # El texto bruto que saca el pypdf
-    perfil_normalizado: PerfilCandidato  # Aquí es donde Gemini guarda el JSON
-    current_step: str             # Para que el frontend sepa por dónde vamos
-    logs: List[str]               # Historial de lo que ha hecho la IA
+    # INPUTS DIFERENCIADOS
+    # El perfil usa HV (PDF) + lo que el usuario escriba en el form
+    user_perfil_form: str         
+    pdf_file: Any                 # Binarios o ruta de la Hoja de Vida
+    
+    # La vacante solo usa el texto capturado del formulario de empresa
+    user_vacante_form: str        
+
+    # RESULTADOS DE NORMALIZACIÓN
+    perfil_normalizado: PerfilNormalizado
+    vacante_normalizada: VacanteNormalizada
+    
+    # CONTROL DE VALIDACIÓN (El "Portero")
+    es_valido: bool
+    campos_a_corregir: List[str]
+    motivo_critico: str
+    
+    # PERSISTENCIA
+    status_db: str                # "sync", "pending", "error"
+    
+    # PROCESOS DE MATCHING Y CIERRE
+    recomendaciones: List[Recomendacion]
+    postulacion: Postulacion
+    actualizacion: Seguimiento
+    
+    # TRAZABILIDAD (Se acumula con cada paso)
+    history: Annotated[List[dict], operator.add]
