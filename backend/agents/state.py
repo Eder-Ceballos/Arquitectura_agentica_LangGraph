@@ -56,6 +56,7 @@ class Seguimiento(TypedDict):
 # --- 4. ESTADO GLOBAL DEL AGENTE (AgentState) ---
 class AgentState(TypedDict):
     # INPUTS DIFERENCIADOS
+    texto_cv : str
     # El perfil usa HV (PDF) + lo que el usuario escriba en el form
     user_perfil_form: str         
     pdf_file: Any                 # Binarios o ruta de la Hoja de Vida
