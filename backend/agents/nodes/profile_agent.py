@@ -1,6 +1,6 @@
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
-from agents.state import AgentState, PerfilCandidato
+from agents.state import AgentState, PerfilNormalizado
 from dotenv import load_dotenv
 
 # Cargamos la API KEY del archivo .env
@@ -17,17 +17,13 @@ llm = ChatGoogleGenerativeAI(
 
 # 2. Vinculamos el modelo con el "Molde" de Pydantic 
 # Esto obliga a Gemini a responder ÚNICAMENTE con el formato JSON dado.
-structured_llm = llm.with_structured_output(PerfilCandidato)
+structured_llm = llm.with_structured_output(PerfilNormalizado)
 
 def profile_node(state: AgentState):
-    print("🧠 [Agente de Perfil] Analizando texto del CV con Gemini...")
+    print("[Agente de Perfil] Analizando texto del CV ...")
 
     # Recuperamos el texto extraído por el parser (pypdf)
-    texto_cv = state.get("texto_cv", "")
-
-    if not texto_cv:
-        print("❌ Error: El texto del CV está vacío.")
-        return {"logs": ["Agente de Perfil: Error - No se recibió texto del parser."]}
+    texto_cv = state.get("pdf_file", "")
 
     # 3. Ejecución de la IA
     # Le damos una instrucción clara para que procese el texto
@@ -41,16 +37,31 @@ def profile_node(state: AgentState):
     """
 
     try:
-        # Gemini lee el texto y rellena el JSON
+        # Ejecución de la IA
         resultado_final = structured_llm.invoke(prompt)
 
-        # 4. Actualizamos el estado global con los datos reales
+        # --- LÍNEAS DE VERIFICACIÓN (Lo que pediste) ---
+        print("✅ [DEBUG] JSON extraído por Gemini:")
+        print(resultado_final) 
+        # ----------------------------------------------
+
+        # 4. RETORNO ADAPTADO AL NUEVO STATE
+        # Guardamos en 'perfil_normalizado' para que el validador de tu amigo lo vea.
         return {
-            "perfil_normalizado": resultado_final,
-            "current_step": "profiling_completed",
-            "logs": [f"Agente de Perfil: Análisis exitoso para {resultado_final.nombre}"]
+            "perfil_normalizado": resultado_final, 
+            "history": [{
+                "agente": "perfil", 
+                "evento": "extracción_completada",
+                "mensaje": f"Perfil de {resultado_final.get('nombre', 'Desconocido')} extraído con éxito."
+            }]
         }
         
     except Exception as e:
         print(f"❌ Error durante la llamada a Gemini: {e}")
-        return {"logs": [f"Agente de Perfil: Error en la IA - {str(e)}"]}
+        return {
+            "history": [{
+                "agente": "perfil", 
+                "evento": "error_ia", 
+                "detalle": str(e)
+            }]
+        }
