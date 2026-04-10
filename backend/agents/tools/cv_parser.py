@@ -24,9 +24,6 @@ def _extract_from_pdf(file_path: str) -> str:
     try:
         reader = PdfReader(file_path)
         
-        if reader.is_encrypted:
-            raise ValueError("El PDF está protegido con contraseña. Pide al usuario un archivo sin cifrar.")
-        
         extracted_text = []
         for page in reader.pages:
             text = page.extract_text()
@@ -35,8 +32,7 @@ def _extract_from_pdf(file_path: str) -> str:
                 
         return " ".join(extracted_text)
     
-    except PdfReadError:
-        raise ValueError("El archivo PDF está corrupto o no tiene un formato legible.")
+    
     except Exception as e:
         raise RuntimeError(f"Error inesperado al procesar el PDF: {str(e)}")
 
@@ -49,6 +45,8 @@ def _extract_from_docx(file_path: str) -> str:
         return " ".join(extracted_text)
     except Exception as e:
         raise ValueError(f"El archivo DOCX está corrupto o no se puede procesar: {str(e)}")
+
+
 
 def parse_cv(file_path: str) -> str:
     """
@@ -69,3 +67,40 @@ def parse_cv(file_path: str) -> str:
 
     # Filtro final de limpieza antes de entregar al Grafo
     return clean_extracted_text(raw_text)
+
+# =================================================================
+# NUEVA SECCIÓN: INICIALIZADOR DEL ESTADO DE LANGGRAPH
+# =================================================================
+
+def get_initial_state(file_path: str) -> dict:
+    """
+    Extrae el texto del archivo y construye el estado inicial 
+    exacto que requiere el nuevo AgentState.
+    """
+    # 1. Usamos tu función existente para sacar el texto limpio
+    texto_limpio = parse_cv(file_path)
+    
+    # 2. Construimos el "maletín" con TODAS las llaves obligatorias del nuevo state.py
+    # Esto evita que LangGraph lance errores de "Missing Key" al iniciar.
+    estado_inicial = {
+        "user_perfil_form": "",          # Vacío porque la info viene del PDF
+        "pdf_file": texto_limpio,        # ¡Aquí enviamos el texto extraído!
+        "user_vacante_form": "",         # Vacío, no aplica para candidatos
+        
+        "perfil_normalizado": {},        # Diccionario vacío, el Agente de Perfil lo llenará
+        "vacante_normalizada": {},       # Vacío
+        
+        "es_valido": True,               # Asumimos que es válido hasta que el validador lo revise
+        "campos_a_corregir": [],
+        "motivo_critico": "",
+        
+        "status_db": "pending",          # Estado inicial para persistencia
+        
+        "recomendaciones": [],
+        "postulacion": {},
+        "actualizacion": {},
+        
+        "history": []                    # Lista vacía lista para el operator.add
+    }
+    
+    return estado_inicial
