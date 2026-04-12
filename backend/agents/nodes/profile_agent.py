@@ -1,4 +1,5 @@
 import os
+from click import prompt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState, PerfilNormalizado
 from database.database import SessionLocal
@@ -14,6 +15,8 @@ llm = ChatGoogleGenerativeAI(
 )
 
 structured_llm = llm.with_structured_output(PerfilNormalizado)
+
+
 
 def profile_node(state: AgentState):
     print("[Agente de Perfil] Analizando texto del CV ...")

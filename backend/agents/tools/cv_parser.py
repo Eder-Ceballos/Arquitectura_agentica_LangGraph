@@ -1,46 +1,49 @@
+# cv_parser.py - Herramienta de extracción y normalización de texto de CVs
+# Implementa parsing de PDFs y DOCX utilizando bibliotecas especializadas (pypdf, python-docx)
+# con optimización de texto para reducir consumo de tokens en modelos de lenguaje.
+
 import os
 import re
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 import docx
 
+# Función de limpieza de texto: normaliza espacios en blanco y elimina caracteres nulos
+# para minimizar ruido en el procesamiento de agentes IA y optimizar tokens.
 def clean_extracted_text(text: str) -> str:
-    """
-    Limpia el texto extraído para ahorrar tokens en el LLM 
-    y evitar ruido en el procesamiento del Agente.
-    """
     if not text:
         return ""
-    
-    # Reemplazar múltiples espacios, tabulaciones o saltos de línea por un solo espacio
+
+    # Normaliza secuencias de espacios, tabulaciones y saltos de línea a un solo espacio
     text = re.sub(r'\s+', ' ', text)
-    # Eliminar caracteres nulos que a veces aparecen en PDFs corruptos
+    # Elimina caracteres nulos comunes en archivos PDF corruptos
     text = text.replace('\x00', '')
-    
+
     return text.strip()
 
+# Función privada para extracción de texto de PDFs: utiliza PyPDF para iterar páginas
+# y extraer texto, manejando excepciones genéricas para robustez.
 def _extract_from_pdf(file_path: str) -> str:
-    """Extrae texto de un archivo PDF manejando posibles bloqueos."""
     try:
         reader = PdfReader(file_path)
-        
+
         extracted_text = []
         for page in reader.pages:
             text = page.extract_text()
             if text:
                 extracted_text.append(text)
-                
+
         return " ".join(extracted_text)
-    
-    
+
+
     except Exception as e:
         raise RuntimeError(f"Error inesperado al procesar el PDF: {str(e)}")
 
+# Función privada para extracción de texto de DOCX: carga documento con python-docx
+# y filtra párrafos no vacíos para evitar texto irrelevante.
 def _extract_from_docx(file_path: str) -> str:
-    """Extrae texto de un archivo DOCX leyendo sus párrafos."""
     try:
         doc = docx.Document(file_path)
-        # Extraemos solo los párrafos que realmente contienen texto (ignoramos vacíos)
         extracted_text = [para.text for para in doc.paragraphs if para.text.strip()]
         return " ".join(extracted_text)
     except Exception as e:
@@ -48,16 +51,14 @@ def _extract_from_docx(file_path: str) -> str:
 
 
 
+# Función principal de parsing: valida existencia del archivo, detecta extensión
+# y delega extracción a funciones especializadas, aplicando limpieza final.
 def parse_cv(file_path: str) -> str:
-    """
-    Punto de entrada principal para la herramienta.
-    Detecta la extensión, extrae el texto bruto y lo devuelve limpio.
-    """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"El archivo referenciado no existe en el storage: {file_path}")
 
     _, extension = os.path.splitext(file_path.lower())
-    
+
     if extension == '.pdf':
         raw_text = _extract_from_pdf(file_path)
     elif extension == '.docx':
@@ -65,42 +66,32 @@ def parse_cv(file_path: str) -> str:
     else:
         raise ValueError(f"Extensión no soportada: '{extension}'. Solo se permite .pdf y .docx")
 
-    # Filtro final de limpieza antes de entregar al Grafo
     return clean_extracted_text(raw_text)
 
-# =================================================================
-# NUEVA SECCIÓN: INICIALIZADOR DEL ESTADO DE LANGGRAPH
-# =================================================================
-
+# Función de inicialización de estado para LangGraph: extrae texto del CV
+# y construye diccionario de estado completo con claves obligatorias para evitar errores de inicialización.
 def get_initial_state(file_path: str) -> dict:
-    """
-    Extrae el texto del archivo y construye el estado inicial 
-    exacto que requiere el nuevo AgentState.
-    """
-    # 1. Usamos tu función existente para sacar el texto limpio
     texto_limpio = parse_cv(file_path)
-    
-    # 2. Construimos el "maletín" con TODAS las llaves obligatorias del nuevo state.py
-    # Esto evita que LangGraph lance errores de "Missing Key" al iniciar.
+
     estado_inicial = {
-        "user_perfil_form": "",          # Vacío porque la info viene del PDF
-        "pdf_file": texto_limpio,        # ¡Aquí enviamos el texto extraído!
-        "user_vacante_form": "",         # Vacío, no aplica para candidatos
-        
-        "perfil_normalizado": {},        # Diccionario vacío, el Agente de Perfil lo llenará
+        "user_perfil_form": "",          # Campo vacío: datos provienen del PDF
+        "pdf_file": texto_limpio,        # Texto extraído del CV
+        "user_vacante_form": "",         # No aplicable para candidatos
+
+        "perfil_normalizado": {},        # Diccionario vacío: poblado por agente de perfil
         "vacante_normalizada": {},       # Vacío
-        
-        "es_valido": True,               # Asumimos que es válido hasta que el validador lo revise
-        "campos_a_corregir": [],
-        "motivo_critico": "",
-        
-        "status_db": "pending",          # Estado inicial para persistencia
-        
-        "recomendaciones": [],
-        "postulacion": {},
-        "actualizacion": {},
-        
-        "history": []                    # Lista vacía lista para el operator.add
+
+        "es_valido": True,               # Asunción inicial: validado por agente validador
+        "campos_a_corregir": [],         # Lista de campos a corregir
+        "motivo_critico": "",            # Motivo de invalidez crítica
+
+        "status_db": "pending",          # Estado inicial para operaciones de BD
+
+        "recomendaciones": [],           # Lista de recomendaciones
+        "postulacion": {},               # Datos de postulación
+        "actualizacion": {},             # Datos de actualización
+
+        "history": []                    # Historial de operaciones: lista para operador add
     }
-    
+
     return estado_inicial

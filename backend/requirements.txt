@@ -1,10 +1,19 @@
+# Framework Base
 fastapi
 uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+
+# IA y Orquestación
 langgraph
 langchain-google-genai
-pydantic-settings
+
+# Base de Datos (Persistencia)
 sqlalchemy
-python-multipart
-python-dotenv
+psycopg2-binary
+
+# Procesamiento de Documentos (Hojas de Vida)
 pypdf
 python-docx
+python-multipart
