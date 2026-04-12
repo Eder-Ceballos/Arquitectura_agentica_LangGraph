@@ -4,7 +4,6 @@ langgraph
 langchain-google-genai
 pydantic-settings
 sqlalchemy
-psycopg2-binary
 python-multipart
 python-dotenv
 pypdf
