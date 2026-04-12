@@ -23,6 +23,7 @@ def universal_validator_node(state: AgentState, target: str = "profile") -> Dict
     """
     
     # 1. Extraer los datos del nuevo State según el objetivo
+    print(f"Iniciando agente validator para {target}. State recibido: {state}")
     if target == "profile":
         data = state.get("perfil_normalizado")
         display_name = data.get("nombre") if data else None
@@ -82,6 +83,7 @@ def universal_validator_node(state: AgentState, target: str = "profile") -> Dict
         result = json.loads(text[start_idx:end_idx])
         
         es_valido = result.get("es_valido", False)
+        print(f"Validator terminado para {target}. Retorno: {result}. es_valido: {es_valido}")
         
         # 5. Retornar el parche de estado alineado con state.py
         return {
