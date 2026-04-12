@@ -1,4 +1,5 @@
 import os
+from click import prompt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState, PerfilNormalizado
 from dotenv import load_dotenv
@@ -19,15 +20,13 @@ llm = ChatGoogleGenerativeAI(
 # Esto obliga a Gemini a responder ÚNICAMENTE con el formato JSON dado.
 structured_llm = llm.with_structured_output(PerfilNormalizado)
 
+
+
 def profile_node(state: AgentState):
-    print("🧠 [Agente de Perfil] Analizando texto del CV con Gemini...")
+    print("[Agente de Perfil] Analizando texto del CV ...")
 
     # Recuperamos el texto extraído por el parser (pypdf)
-    texto_cv = state.get("texto_cv", "")
-
-    if not texto_cv:
-        print("❌ Error: El texto del CV está vacío.")
-        return {"logs": ["Agente de Perfil: Error - No se recibió texto del parser."]}
+    texto_cv = state.get("pdf_file", "")
 
     # 3. Ejecución de la IA
     # Le damos una instrucción clara para que procese el texto
@@ -41,16 +40,27 @@ def profile_node(state: AgentState):
     """
 
     try:
-        # Gemini lee el texto y rellena el JSON
         resultado_final = structured_llm.invoke(prompt)
+        
+        # Convertimos el objeto Pydantic a un diccionario real
+        # Si resultado_final ya es un dict por el structured_output, asegúrate de esto:
+        perfil_dict = resultado_final if isinstance(resultado_final, dict) else resultado_final.dict()
 
-        # 4. Actualizamos el estado global con los datos reales
         return {
-            "perfil_normalizado": resultado_final,
-            "current_step": "profiling_completed",
-            "logs": [f"Agente de Perfil: Análisis exitoso para {resultado_final.nombre}"]
+            "perfil_normalizado": perfil_dict, 
+            "history": [{
+                "agente": "perfil", 
+                "evento": "extracción_completada",
+                "mensaje": f"Perfil de {perfil_dict.get('nombre', 'Desconocido')} extraído."
+            }]
         }
         
     except Exception as e:
         print(f"❌ Error durante la llamada a Gemini: {e}")
-        return {"logs": [f"Agente de Perfil: Error en la IA - {str(e)}"]}
+        return {
+            "history": [{
+                "agente": "perfil", 
+                "evento": "error_ia", 
+                "detalle": str(e)
+            }]
+        }
