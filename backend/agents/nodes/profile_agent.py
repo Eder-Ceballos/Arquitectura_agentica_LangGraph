@@ -1,4 +1,5 @@
 import os
+from click import prompt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState, PerfilNormalizado
 from dotenv import load_dotenv
@@ -19,6 +20,8 @@ llm = ChatGoogleGenerativeAI(
 # Esto obliga a Gemini a responder ÚNICAMENTE con el formato JSON dado.
 structured_llm = llm.with_structured_output(PerfilNormalizado)
 
+
+
 def profile_node(state: AgentState):
     print("[Agente de Perfil] Analizando texto del CV ...")
 
@@ -37,22 +40,18 @@ def profile_node(state: AgentState):
     """
 
     try:
-        # Ejecución de la IA
         resultado_final = structured_llm.invoke(prompt)
+        
+        # Convertimos el objeto Pydantic a un diccionario real
+        # Si resultado_final ya es un dict por el structured_output, asegúrate de esto:
+        perfil_dict = resultado_final if isinstance(resultado_final, dict) else resultado_final.dict()
 
-        # --- LÍNEAS DE VERIFICACIÓN (Lo que pediste) ---
-        print("✅ [DEBUG] JSON extraído por Gemini:")
-        print(resultado_final) 
-        # ----------------------------------------------
-
-        # 4. RETORNO ADAPTADO AL NUEVO STATE
-        # Guardamos en 'perfil_normalizado' para que el validador de tu amigo lo vea.
         return {
-            "perfil_normalizado": resultado_final, 
+            "perfil_normalizado": perfil_dict, 
             "history": [{
                 "agente": "perfil", 
                 "evento": "extracción_completada",
-                "mensaje": f"Perfil de {resultado_final.get('nombre', 'Desconocido')} extraído con éxito."
+                "mensaje": f"Perfil de {perfil_dict.get('nombre', 'Desconocido')} extraído."
             }]
         }
         
