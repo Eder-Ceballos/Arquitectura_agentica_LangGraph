@@ -223,7 +223,7 @@ const Form = ({ state, onUpdate }) => {
                 : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'
               }`}
             >
-              {es_valido ? 'Continuar a Vacantes' : 'Guardar y Revalidar'}
+              {es_valido ? 'Continuar a Perfil' : 'Guardar y Revalidar'}
             </button>
           </div>
         </form>

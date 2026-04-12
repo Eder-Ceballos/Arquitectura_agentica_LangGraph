@@ -5,6 +5,7 @@
 import { useRouter } from 'next/router';
 import { useMagneto } from '../context/MagnetoContext';
 import { FileUpload } from './FileUpload';
+//import Profile from './Profile';
 
 export default function Home() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function Home() {
 
           // Enrutamiento condicional: vacantes si válido, formulario si requiere corrección
           if (data.es_valido === true) {
-            router.push('/vacantes');
+            router.push('/Profile'); // Redirige a perfil si el perfil es válido
           } else {
             router.push('/FormUser');
           }
