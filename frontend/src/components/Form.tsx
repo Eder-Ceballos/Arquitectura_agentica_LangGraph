@@ -95,7 +95,6 @@ const Form = ({ state, onUpdate }: { state: any; onUpdate: (data: any) => void }
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-8">
-
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <h3 className="col-span-full text-sm font-bold uppercase tracking-widest text-blue-500">Datos Personales</h3>
             <div className="space-y-2">
@@ -192,7 +191,7 @@ const Form = ({ state, onUpdate }: { state: any; onUpdate: (data: any) => void }
                   : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'
               }`}
             >
-              {es_valido ? 'Continuar al Panel' : 'Guardar y Revalidar'}
+              {es_valido ? 'Continuar a Perfil' : 'Guardar y Revalidar'}
             </button>
           </div>
         </form>

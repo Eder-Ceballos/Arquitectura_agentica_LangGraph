@@ -18,6 +18,7 @@ def create_graph():
         return universal_validator_node(state, target="profile")
 
     workflow.add_node("validator", universal_validator_node)
+    #workflow.add_node("validator", mock_validator_node)
 
     workflow.set_entry_point("profile_analyzer")
     workflow.add_edge("profile_analyzer", "validator")

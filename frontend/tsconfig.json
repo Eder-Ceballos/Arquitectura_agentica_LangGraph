@@ -16,6 +16,14 @@
     "incremental": true,
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.mts",
+    "**/*.ts",
+    "**/*.tsx",
+    "src/__test__/Profile.test.js"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

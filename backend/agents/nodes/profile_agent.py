@@ -11,7 +11,7 @@ load_dotenv()
 # Usamos 'gemini-1.5-flash' porque es extremadamente rápido y eficiente 
 # para tareas de extracción de datos estructurados.
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview", 
+    model="gemini-2.5-flash-lite", 
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     temperature=0 
 )

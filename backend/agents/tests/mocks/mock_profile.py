@@ -12,10 +12,10 @@ def mock_profile_node(state: AgentState):
     # El objeto exacto que solicitaste
     resultado_mock = {
         "id_perfil": 12,
-        "nombre": "",
+        "nombre": "Eder",
         "telefono": 312678654,
         "email": "eder@wder.cd",
-        "profesion": "",
+        "profesion": "sistemas",
         "descripcion": "fasdfasfasdfasdfeafas",
         "habilidades": ["python", "sql", "docker"],
         "años_experiencia": 3,
