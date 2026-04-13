@@ -24,16 +24,13 @@ const FormUser = () => {
 
   // Handler de actualización: procesa datos corregidos y actualiza estado global
   const handleUpdate = (updatedProfile: any) => {
-    console.log("Datos corregidos recibidos en el contenedor:", updatedProfile);
-
-    setMagnetoState({
-      ...magnetoState,
-      perfil_normalizado: updatedProfile,
-      es_valido: true,
-      campos_a_corregir: []
-    });
-
-    alert("Perfil actualizado correctamente. Listo para el matching.");
+  setMagnetoState({
+    ...magnetoState,
+    perfil_normalizado: updatedProfile,
+    es_valido: true,
+    campos_a_corregir: []
+  });
+  router.push('/dashboard');
   };
 
   // Renderizado condicional: muestra loading si no hay estado de agentes

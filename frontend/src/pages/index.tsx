@@ -20,7 +20,7 @@ export default function Home() {
 
           // Enrutamiento condicional: vacantes si válido, formulario si requiere corrección
           if (data.es_valido === true) {
-            router.push('/vacantes');
+            router.push('/dashboard');
           } else {
             router.push('/FormUser');
           }
