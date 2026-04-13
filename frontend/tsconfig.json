@@ -23,7 +23,7 @@
     "**/*.mts",
     "**/*.ts",
     "**/*.tsx"
-  ],
+, "src/__test__/Profile.test.js"  ],
   "exclude": [
     "node_modules"
   ]

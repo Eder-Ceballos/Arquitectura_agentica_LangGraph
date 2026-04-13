@@ -5,7 +5,7 @@
 import React, { createContext, useContext, useState } from 'react';
 
 // Creación del contexto con tipo genérico: permite compartir estado complejo
-const MagnetoContext = createContext<any>(null);
+export const MagnetoContext = createContext<any>(null);
 
 // Provider del contexto: envuelve la aplicación y proporciona estado global
 export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => {
