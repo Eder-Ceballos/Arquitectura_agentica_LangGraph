@@ -9,7 +9,7 @@ import { FileUpload } from './FileUpload';
 
 export default function Home() {
   const router = useRouter();
-  const { setMagnetoState } = useMagneto();
+  const { setState } = useMagneto();
 
   // Renderizado principal: layout centrado con componente FileUpload
   return (
@@ -17,7 +17,7 @@ export default function Home() {
       <FileUpload
         onSuccess={(data) => {
           console.log("Llegó a onSuccess de Home con:", data);
-          setMagnetoState(data); // Actualiza estado global con respuesta de agentes
+          setState(data); // Actualiza estado global con respuesta de agentes
 
           // Enrutamiento condicional: vacantes si válido, formulario si requiere corrección
           if (data.es_valido === true) {
