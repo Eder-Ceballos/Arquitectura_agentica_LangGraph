@@ -1,11 +1,3 @@
-"""
-profile_repository.py
----------------------
-Capa de acceso a datos para el perfil del candidato.
-
-Compatible con el nuevo state.py donde PerfilNormalizado es un TypedDict (dict).
-"""
-
 from sqlalchemy.orm import Session
 from database.models import Perfil, Habilidad
 
@@ -56,38 +48,38 @@ def _dict_a_orm(perfil: dict) -> Perfil:
         email = None
 
     return Perfil(
-        id_perfil        = perfil.get("id_perfil"),
-        nombre           = perfil.get("nombre", ""),
-        telefono         = perfil.get("telefono", ""),
-        email            = email,
-        profesion        = perfil.get("profesion", ""),
-        descripcion      = perfil.get("descripcion", ""),
-        años_experiencia = perfil.get("años_experiencia", 0),
-        sectores         = perfil.get("sectores", ""),
-        cargo            = perfil.get("cargo", ""),
-        salario          = perfil.get("salario", 0.0),
-        educativo        = perfil.get("educativo", ""),
-        disponibilidad   = perfil.get("disponibilidad", ""),
-        discapacidades   = perfil.get("discapacidades", ""),
-        ubicacion        = perfil.get("ubicacion", ""),
-        is_human_verified = False
+        id_perfil=perfil.get("id_perfil"),
+        nombre=perfil.get("nombre", ""),
+        telefono=perfil.get("telefono", ""),
+        email=email,
+        profesion=perfil.get("profesion", ""),
+        descripcion=perfil.get("descripcion", ""),
+        años_experiencia=perfil.get("años_experiencia", 0),
+        sectores=perfil.get("sectores", ""),
+        cargo=perfil.get("cargo", ""),
+        salario=perfil.get("salario", 0.0),
+        educativo=perfil.get("educativo", ""),
+        disponibilidad=perfil.get("disponibilidad", ""),
+        discapacidades=perfil.get("discapacidades", ""),
+        ubicacion=perfil.get("ubicacion", ""),
+        is_human_verified=False
     )
 
 
 def _actualizar_campos(perfil_orm: Perfil, perfil: dict) -> None:
-    perfil_orm.nombre           = perfil.get("nombre", perfil_orm.nombre)
-    perfil_orm.telefono         = perfil.get("telefono", perfil_orm.telefono)
-    perfil_orm.email            = perfil.get("email", perfil_orm.email)
-    perfil_orm.profesion        = perfil.get("profesion", perfil_orm.profesion)
-    perfil_orm.descripcion      = perfil.get("descripcion", perfil_orm.descripcion)
+    perfil_orm.nombre = perfil.get("nombre", perfil_orm.nombre)
+    perfil_orm.telefono = perfil.get("telefono", perfil_orm.telefono)
+    perfil_orm.email = perfil.get("email", perfil_orm.email)
+    perfil_orm.profesion = perfil.get("profesion", perfil_orm.profesion)
+    perfil_orm.descripcion = perfil.get("descripcion", perfil_orm.descripcion)
     perfil_orm.años_experiencia = perfil.get("años_experiencia", perfil_orm.años_experiencia)
-    perfil_orm.sectores         = perfil.get("sectores", perfil_orm.sectores)
-    perfil_orm.cargo            = perfil.get("cargo", perfil_orm.cargo)
-    perfil_orm.salario          = perfil.get("salario", perfil_orm.salario)
-    perfil_orm.educativo        = perfil.get("educativo", perfil_orm.educativo)
-    perfil_orm.disponibilidad   = perfil.get("disponibilidad", perfil_orm.disponibilidad)
-    perfil_orm.discapacidades   = perfil.get("discapacidades", perfil_orm.discapacidades)
-    perfil_orm.ubicacion        = perfil.get("ubicacion", perfil_orm.ubicacion)
+    perfil_orm.sectores = perfil.get("sectores", perfil_orm.sectores)
+    perfil_orm.cargo = perfil.get("cargo", perfil_orm.cargo)
+    perfil_orm.salario = perfil.get("salario", perfil_orm.salario)
+    perfil_orm.educativo = perfil.get("educativo", perfil_orm.educativo)
+    perfil_orm.disponibilidad = perfil.get("disponibilidad", perfil_orm.disponibilidad)
+    perfil_orm.discapacidades = perfil.get("discapacidades", perfil_orm.discapacidades)
+    perfil_orm.ubicacion = perfil.get("ubicacion", perfil_orm.ubicacion)
 
 
 def _sincronizar_habilidades(perfil_orm: Perfil, habilidades_nuevas: list, db: Session) -> None:

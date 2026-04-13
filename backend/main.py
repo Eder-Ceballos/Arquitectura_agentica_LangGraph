@@ -4,6 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import shutil
 import os
+import sys
+from pathlib import Path
+
+# Asegura que el directorio raíz del proyecto y la carpeta backend estén en sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent
+for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 import sqlite3
 from typing import List, Optional
 from pydantic import BaseModel
@@ -14,7 +23,9 @@ from agents.graph import app_graph
 from agents.nodes.validator import universal_validator_node
 from database.database import engine, SessionLocal
 from database.models import Base
+from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
+from database.vacancy_repository import obtener_todas_las_vacantes
 
 # --- CONFIGURACIÓN DE RUTA DINÁMICA ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,12 +43,15 @@ def save_candidate_to_db(perfil: dict):
     finally:
         db.close()
 
+
+# Crea las tablas en database/database.db al arrancar (si no existen)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"🗄️  Buscando base de datos en: {DB_PATH}")
     # Asegura que las tablas existan al iniciar el servidor en Arch
     Base.metadata.create_all(bind=engine)
-    print("✅ Estructura de base de datos verificada.")
+    load_static_vacancies()
+    print("✅ Base de datos lista y vacantes estáticas sincronizadas.")
     yield
 
 app = FastAPI(title="IAGentes API - Multi-Agente Platform", lifespan=lifespan)
@@ -147,7 +161,56 @@ async def upload_cv(file: UploadFile = File(...)):
             "motivo_critico": resultado_final.get("motivo_critico")
         }
     except Exception as e:
-        print(f"❌ Error en procesamiento de CV: {e}")
+        # Manejo de errores: retorna estado de error con detalles técnicos
+        return {"status": "error", "detalle": str(e)}
+
+
+@app.get("/api/v1/vacantes")
+def list_vacantes():
+    db = SessionLocal()
+    try:
+        vacantes = [vacante.to_dict() for vacante in obtener_todas_las_vacantes(db)]
+        return {"status": "success", "vacantes": vacantes}
+    finally:
+        db.close()
+
+
+# Endpoint para revalidación de candidatos: permite corrección manual de datos y reevaluación
+@app.post("/api/v1/candidates/revalidate")
+async def revalidate_candidate(corrected_data: dict = Body(...)):
+    """
+    Recibe el JSON editado desde el frontend y vuelve a pasarlo por el validador.
+    """
+    try:
+        # Construye estado para revalidación forzando evaluación del validador
+        state_to_revalidate = {
+            "perfil_normalizado": corrected_data,
+            "es_valido": False, # Fuerza reevaluación del validador
+            "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
+        }
+
+        # Valida el perfil corregido directamente sin reiniciar todo el grafo
+        resultado_final = universal_validator_node(state_to_revalidate, target="profile")
+
+        # Persistir los datos corregidos siempre que haya un perfil válido o parcial
+        if corrected_data:
+            save_candidate_to_db(corrected_data)
+            print("💾 Perfil corregido guardado en persistencia correctamente.")
+
+        if resultado_final.get("es_valido"):
+            print("💾 Perfil válido tras revalidación.")
+
+        # Retorna resultados de la revalidación
+        return {
+            "status": "success",
+            "es_valido": resultado_final.get("es_valido"),
+            "perfil_normalizado": corrected_data,
+            "campos_a_corregir": resultado_final.get("campos_a_corregir"),
+            "motivo_critico": resultado_final.get("motivo_critico"),
+            "historial": resultado_final.get("history")
+        }
+    except Exception as e:
+        # Manejo de excepciones con retorno de error detallado
         return {"status": "error", "detalle": str(e)}
 
 @app.get("/")
