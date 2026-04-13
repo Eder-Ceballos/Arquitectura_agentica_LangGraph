@@ -1,23 +1,63 @@
-// MagnetoContext.tsx - Contexto React para gestión global del estado de Magneto
-// Implementa patrón Provider-Consumer para compartir estado entre componentes,
-// utilizando React Context API para evitar prop drilling en la aplicación.
+// MagnetoContext.tsx - Adaptación para Flujo Dinámico
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-import React, { createContext, useContext, useState } from 'react';
+// Definimos la interfaz para mantener consistencia con los agentes
+interface MagnetoState {
+  perfil_normalizado: any | null;
+  es_valido: boolean;
+  history: any[];
+}
 
-// Creación del contexto con tipo genérico: permite compartir estado complejo
 export const MagnetoContext = createContext<any>(null);
 
-// Provider del contexto: envuelve la aplicación y proporciona estado global
 export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => {
-  // Estado global de Magneto: almacena datos del perfil y validaciones
-  const [magnetoState, setMagnetoState] = useState(null);
+  // Inicializamos con la estructura que esperan tus componentes
+  const [state, setState] = useState<MagnetoState>({
+    perfil_normalizado: null,
+    es_valido: false,
+    history: []
+  });
+
+  // PERSISTENCIA: Al cargar, intentamos recuperar el último perfil de localStorage
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('last_magneto_profile');
+    if (savedProfile) {
+      try {
+        setState(prev => ({
+          ...prev,
+          perfil_normalizado: JSON.parse(savedProfile)
+        }));
+      } catch (e) {
+        console.error("Error recuperando sesión:", e);
+      }
+    }
+  }, []);
+
+  // Función para actualizar el estado y persistir el email de búsqueda
+  const updateMagnetoState = (newState: Partial<MagnetoState>) => {
+    setState(prev => {
+      const updated = { ...prev, ...newState };
+      
+      // Si el nuevo estado trae un perfil, lo guardamos para evitar el "No hay perfil activo" al recargar
+      if (updated.perfil_normalizado) {
+        localStorage.setItem('last_magneto_profile', JSON.stringify(updated.perfil_normalizado));
+      }
+      
+      return updated;
+    });
+  };
 
   return (
-    <MagnetoContext.Provider value={{ magnetoState, setMagnetoState }}>
+    <MagnetoContext.Provider value={{ state, setState: updateMagnetoState }}>
       {children}
     </MagnetoContext.Provider>
   );
 };
 
-// Hook personalizado para consumir el contexto: simplifica acceso al estado global
-export const useMagneto = () => useContext(MagnetoContext);
+export const useMagneto = () => {
+  const context = useContext(MagnetoContext);
+  if (!context) {
+    throw new Error("useMagneto debe usarse dentro de un MagnetoProvider");
+  }
+  return context;
+};
