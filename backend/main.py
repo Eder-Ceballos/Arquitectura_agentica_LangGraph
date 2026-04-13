@@ -1,21 +1,21 @@
 # main.py - API Backend para Magneto: Sistema de Agentes IA para Procesamiento de CVs
-# Utiliza FastAPI para endpoints RESTful, integrando un grafo de agentes LangGraph
-# para análisis y validación de perfiles candidatos.
-
-from fastapi import FastAPI, UploadFile, File, Body
+from fastapi import FastAPI, UploadFile, File, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
+import sqlite3
+from typing import List
+from pydantic import BaseModel
 
-# Importaciones de módulos locales: herramientas de parsing y grafo de agentes
+# Importaciones de módulos locales
 from agents.tools.cv_parser import get_initial_state
 from agents.graph import app_graph
 
-# Inicialización de la aplicación FastAPI con título descriptivo
 app = FastAPI(title="IAGentes API - Magneto Edition")
 
-# Configuración de CORS para permitir solicitudes desde el frontend React (localhost:3000)
-# Permite credenciales, todos los métodos y headers para integración completa
+# Ruta a la base de datos según tu estructura en Arch
+DB_PATH = "database/app.db"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"], 
@@ -24,26 +24,73 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
-# Endpoint principal para carga de CVs: procesa archivos PDF y ejecuta el grafo de agentes
+# Modelo para la actualización manual desde el perfil
+class ProfileUpdate(BaseModel):
+    nombre: str
+    descripcion: str
+    cargo: str
+
+# --- NUEVOS ENDPOINTS DE PERSISTENCIA ---
+
+@app.get("/api/v1/profile/{email}")
+async def get_profile(email: str):
+    """Obtiene los datos del perfil directamente desde la base de datos."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Obtener datos principales del perfil 
+        cursor.execute("SELECT * FROM perfiles WHERE email = ?", (email,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Perfil no encontrado en la DB")
+        
+        profile = dict(row)
+        
+        # Obtener habilidades relacionadas [cite: 31]
+        cursor.execute("SELECT nombre FROM habilidades WHERE id_perfil = ?", (profile['id_perfil'],))
+        profile['habilidades'] = [s['nombre'] for s in cursor.fetchall()]
+        
+        conn.close()
+        return profile
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/v1/profile/{email}")
+async def update_profile(email: str, data: ProfileUpdate):
+    """Actualiza nombre, cargo y descripción en la base de datos."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE perfiles 
+            SET nombre = ?, cargo = ?, descripcion = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE email = ?
+        """, (data.nombre, data.cargo, data.descripcion, email))
+        
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": "Base de datos actualizada correctamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- ENDPOINTS EXISTENTES ACTUALIZADOS ---
+
 @app.post("/api/v1/candidates/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
-    # Genera ruta de almacenamiento temporal en el directorio storage/cvs
     file_path = f"storage/cvs/{file.filename}"
-    # Crea directorios necesarios si no existen
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
-    # Guarda el archivo subido en el sistema de archivos local
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        # Obtiene el estado inicial del CV mediante el parser especializado
         estado_inicial = get_initial_state(file_path)
-        
-        # Ejecuta el grafo de agentes de manera asíncrona para procesar el perfil
         resultado_final = await app_graph.ainvoke(estado_inicial)
 
-        # Retorna respuesta estructurada con resultados del análisis de agentes
         return {
             "status": "success",
             "perfil_normalizado": resultado_final.get("perfil_normalizado"),
@@ -53,32 +100,37 @@ async def upload_cv(file: UploadFile = File(...)):
             "historial": resultado_final.get("history")
         }
     except Exception as e:
-        # Manejo de errores: retorna estado de error con detalles técnicos
         return {"status": "error", "detalle": str(e)}
 
-# Endpoint para revalidación de candidatos: permite corrección manual de datos y reevaluación
 @app.post("/api/v1/candidates/revalidate")
 async def revalidate_candidate(corrected_data: dict = Body(...)):
-    """
-    Recibe el JSON editado desde el frontend y vuelve a pasarlo por el validador.
-    """
     try:
-        # Construye estado para revalidación forzando evaluación del validador
         state_to_revalidate = {
             "perfil_normalizado": corrected_data,
-            "es_valido": False, # Fuerza reevaluación del validador
+            "es_valido": False,
             "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
         }
 
-        # Reejecuta el grafo de agentes con los datos corregidos
         resultado_final = await app_graph.ainvoke(state_to_revalidate)
 
+        # PERSISTENCIA: Si el perfil es válido tras la corrección, se guarda/actualiza
         if resultado_final.get("es_valido"):
-            # Punto de integración para persistencia: guardar en BD si es válido
-            # await save_candidate_to_db(resultado_final["perfil_normalizado"])
-            print("💾 Perfil válido: Guardado en persistencia correctamente.")
+            p = resultado_final["perfil_normalizado"]
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Ejemplo de Upsert (Update or Insert) basado en el email 
+            cursor.execute("""
+                UPDATE perfiles SET 
+                nombre = ?, telefono = ?, profesion = ?, descripcion = ?, 
+                updated_at = CURRENT_TIMESTAMP 
+                WHERE email = ?
+            """, (p['nombre'], p['telefono'], p['profesion'], p['descripcion'], p['email']))
+            
+            conn.commit()
+            conn.close()
+            print(f"💾 Perfil de {p['nombre']} persistido en app.db")
 
-        # Retorna resultados de la revalidación
         return {
             "status": "success",
             "es_valido": resultado_final.get("es_valido"),
@@ -87,10 +139,8 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
             "historial": resultado_final.get("history")
         }
     except Exception as e:
-        # Manejo de excepciones con retorno de error detallado
         return {"status": "error", "detalle": str(e)}
 
-# Endpoint raíz: proporciona confirmación de que la API está operativa y conectada al grafo
 @app.get("/")
 def root():
-    return {"message": "API de IAgentes activa y vinculada al Grafo"}
+    return {"message": "API de IAgentes activa, vinculada al Grafo y conectada a app.db"}
