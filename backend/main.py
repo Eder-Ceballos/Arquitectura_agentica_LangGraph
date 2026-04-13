@@ -6,6 +6,9 @@ from fastapi import FastAPI, UploadFile, File, Body
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Importaciones de módulos locales: herramientas de parsing y grafo de agentes
 from agents.tools.cv_parser import get_initial_state

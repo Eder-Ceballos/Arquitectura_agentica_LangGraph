@@ -26,11 +26,11 @@ const FormUser = () => {
   const handleUpdate = (updatedProfile: any) => {
   setMagnetoState({
     ...magnetoState,
-    perfil_normalizado: updatedProfile,
+    perfil_normalizado: updatedProfile.perfil_normalizado || updatedProfile,
     es_valido: true,
     campos_a_corregir: []
   });
-  router.push('/dashboard');
+  router.push('/Profile');
   };
 
   // Renderizado condicional: muestra loading si no hay estado de agentes

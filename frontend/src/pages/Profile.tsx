@@ -1,31 +1,37 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import { 
-  User, Mail, Phone, MapPin, Briefcase, 
-  Terminal, Calendar, DollarSign, GraduationCap, 
-  ShieldCheck, FileText, Code2, Search, Send
+  Briefcase, Terminal, GraduationCap, 
+  ShieldCheck, Search, Send
 } from 'lucide-react';
+import { useMagneto } from '../context/MagnetoContext';
+import DashboardPage from './DashboardPage';
 
 const Profile = () => {
   const router = useRouter();
   const [showLogs, setShowLogs] = useState(false);
+  const { magnetoState } = useMagneto();
 
-  // Datos estáticos de ejemplo
-  const p = {
-    nombre: "Eder Santiago Ceballos Quiroz",
-    cargo: "Desarrollador React | Aspirante Red Team",
-    profesion: "Ingeniero de Sistemas",
-    email: "ederceballos874@gmail.com",
-    telefono: "+57 3205041789",
-    ubicacion: "Medellín, Antioquia",
-    descripcion: "Aspirante al área de Red Team y seguridad ofensiva, con conocimientos en programación, redes, sistemas Linux y fundamentos de ciberseguridad. Enfocado en el aprendizaje continuo.",
-    habilidades: ["Python", "React", "Linux", "OSINT", "OWASP", "Docker", "Nmap"],
-    salario: "$5.000.000 - $7.000.000",
-    disponibilidad: "Inmediata",
-    educativo: "Ingeniería de Sistemas - Universidad EAFIT",
-    años_experiencia: "1",
-    sectores: "Tecnología, Ciberseguridad"
-  };
+  // Si no hay datos aún, redirige al inicio
+  if (!magnetoState || !magnetoState.perfil_normalizado) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+        <h2 className="text-xl font-bold">No se detectaron datos</h2>
+        <p className="text-slate-400 mt-2 text-center">
+          Por favor, sube tu CV primero. <br />
+        </p>
+        <button
+          onClick={() => router.push('/')}
+          className="mt-6 text-indigo-400 hover:text-indigo-300 font-bold text-sm"
+        >
+          ← Volver al inicio
+        </button>
+      </div>
+    );
+  }
+
+  const p = magnetoState.perfil_normalizado;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-300 p-4 md:p-8 font-sans">
@@ -50,7 +56,7 @@ const Profile = () => {
         {/* Card Principal */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl mb-6">
           
-          {/* Header con Botones de Navegación */}
+          {/* Header */}
           <div className="bg-gradient-to-b from-slate-800/50 to-slate-900 p-8 border-b border-slate-800">
             <div className="flex flex-col md:flex-row justify-between items-start gap-6">
               <div className="space-y-2">
@@ -61,7 +67,6 @@ const Profile = () => {
                 <p className="text-indigo-400 font-mono text-sm">{p.cargo}</p>
               </div>
 
-              {/* ACCIONES PRINCIPALES */}
               <div className="flex flex-col w-full md:w-auto gap-3">
                 <button 
                   onClick={() => router.push('/Matching')}
@@ -79,15 +84,15 @@ const Profile = () => {
             </div>
           </div>
 
-          {/* Grid de Información Detallada */}
+          {/* Grid de Información */}
           <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-10">
             
-            {/* Sidebar Técnico */}
+            {/* Sidebar */}
             <div className="space-y-6">
               <div>
                 <h3 className="text-white text-[10px] font-black mb-4 tracking-[0.2em] uppercase opacity-50">Tech Skills</h3>
                 <div className="flex flex-wrap gap-2">
-                  {p.habilidades.map((skill, i) => (
+                  {(p.habilidades || []).map((skill, i) => (
                     <span key={i} className="bg-slate-950 border border-slate-800 px-2.5 py-1 rounded text-[11px] font-mono text-indigo-300">
                       {skill}
                     </span>
@@ -97,7 +102,7 @@ const Profile = () => {
               <div className="space-y-3 pt-4 border-t border-slate-800/50">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500">Salario</span>
-                  <span className="text-white font-mono">{p.salario}</span>
+                  <span className="text-white font-mono">{p.salario || 'No especificado'}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500">Ubicación</span>
@@ -124,30 +129,20 @@ const Profile = () => {
                 <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-2xl">
                   <GraduationCap size={16} className="text-indigo-500 mb-2"/>
                   <p className="text-white text-xs font-bold">Educación</p>
-                  <p className="text-slate-500 text-[10px] mt-1 uppercase">EAFIT - Ingeniería</p>
+                  <p className="text-slate-500 text-[10px] mt-1 uppercase">{p.educativo}</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Terminal Logs Section */}
+        {/* Logs Section — aquí irá el dashboard en el paso 2 */}
         {showLogs && (
-          <div className="bg-black border border-slate-800 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
-            <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800">
-              <span className="text-[10px] font-mono text-indigo-500 tracking-widest">RUNNING_MAGNETO_GRAV_V2</span>
-              <div className="flex gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-700"></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-700"></div>
-              </div>
-            </div>
-            <div className="p-4 font-mono text-[10px] text-green-500/70 space-y-1 max-h-32 overflow-y-auto">
-              <p>{`> [SYSTEM] Profile component mounted`}</p>
-              <p>{`> [DATA] Hydrating from MagnetoContext`}</p>
-              <p className="text-white">{`> [SUCCESS] Fields mapped for Eder Ceballos`}</p>
-            </div>
-          </div>
-        )}
+  <div className="mt-4">
+    <DashboardPage />
+  </div>
+)}
+
       </div>
     </div>
   );
