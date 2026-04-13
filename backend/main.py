@@ -1,6 +1,7 @@
 # main.py - API Backend para Magneto: Sistema de Agentes IA para Procesamiento de CVs
 from fastapi import FastAPI, UploadFile, File, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import shutil
 import os
 import sqlite3
@@ -10,18 +11,40 @@ from pydantic import BaseModel
 # Importaciones de módulos locales
 from agents.tools.cv_parser import get_initial_state
 from agents.graph import app_graph
+from agents.nodes.validator import universal_validator_node
+from database.database import engine, SessionLocal
+from database.models import Base
+from database.profile_repository import guardar_perfil
 
-app = FastAPI(title="IAGentes API - Magneto Edition")
 
-# Ruta a la base de datos según tu estructura en Arch
-DB_PATH = "database/app.db"
+def save_candidate_to_db(perfil: dict):
+    if not isinstance(perfil, dict) or not perfil:
+        return None
+
+    db = SessionLocal()
+    try:
+        return guardar_perfil(perfil, db)
+    finally:
+        db.close()
+
+
+# Crea las tablas en app.db al arrancar (si no existen)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🗄️  Inicializando base de datos...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Base de datos lista.")
+    yield
+
+
+app = FastAPI(title="IAGentes API - Multi-Agente Platform", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], 
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Modelo para la actualización manual desde el perfil
@@ -111,7 +134,13 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
             "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
         }
 
-        resultado_final = await app_graph.ainvoke(state_to_revalidate)
+        # Valida el perfil corregido directamente sin reiniciar todo el grafo
+        resultado_final = universal_validator_node(state_to_revalidate, target="profile")
+
+        # Persistir los datos corregidos siempre que haya un perfil válido o parcial
+        if corrected_data:
+            save_candidate_to_db(corrected_data)
+            print("💾 Perfil corregido guardado en persistencia correctamente.")
 
         # PERSISTENCIA: Si el perfil es válido tras la corrección, se guarda/actualiza
         if resultado_final.get("es_valido"):
@@ -134,8 +163,9 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
         return {
             "status": "success",
             "es_valido": resultado_final.get("es_valido"),
-            "perfil_normalizado": resultado_final.get("perfil_normalizado"),
+            "perfil_normalizado": corrected_data,
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
+            "motivo_critico": resultado_final.get("motivo_critico"),
             "historial": resultado_final.get("history")
         }
     except Exception as e:
@@ -143,4 +173,4 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
 
 @app.get("/")
 def root():
-    return {"message": "API de IAgentes activa, vinculada al Grafo y conectada a app.db"}
+    return {"message": "API de IAgentes activa y vinculada al Grafo"}
