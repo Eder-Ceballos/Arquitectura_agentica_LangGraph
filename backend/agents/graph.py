@@ -31,8 +31,8 @@ def create_graph():
     # Envolvemos el validador para decirle que evalúe el "perfil"
     def validador_perfil(state: AgentState):
         return universal_validator_node(state, target="profile")
-        
-    workflow.add_node("validator", universal_validator_node)
+
+    workflow.add_node("validator", validador_perfil)
 
     # 2. Definir el flujo inicial: Inicio -> Perfil -> Validador
     workflow.set_entry_point("profile_analyzer")

@@ -10,11 +10,22 @@ from sqlalchemy.orm import Session
 from database.models import Perfil, Habilidad
 
 
+def _is_valid_email(email: str | None) -> bool:
+    if not email or not isinstance(email, str):
+        return False
+    cleaned = email.strip().lower()
+    if cleaned in {"", "-", "--", "n/a", "na", "none", "sin datos", "no aplica"}:
+        return False
+    return "@" in cleaned and "." in cleaned
+
+
 def guardar_perfil(perfil: dict, db: Session) -> Perfil:
     id_perfil = perfil.get("id_perfil")
     perfil_existente = None
     if id_perfil:
         perfil_existente = db.query(Perfil).filter(Perfil.id_perfil == id_perfil).first()
+    elif _is_valid_email(perfil.get("email")):
+        perfil_existente = db.query(Perfil).filter(Perfil.email == perfil.get("email")).first()
 
     if perfil_existente:
         _actualizar_campos(perfil_existente, perfil)
@@ -40,11 +51,15 @@ def obtener_todos_los_perfiles(db: Session) -> list[Perfil]:
 
 
 def _dict_a_orm(perfil: dict) -> Perfil:
+    email = perfil.get("email")
+    if not email or not isinstance(email, str) or email.strip().lower() in {"", "-", "--", "n/a", "na", "none", "sin datos", "no aplica"}:
+        email = None
+
     return Perfil(
         id_perfil        = perfil.get("id_perfil"),
         nombre           = perfil.get("nombre", ""),
         telefono         = perfil.get("telefono", ""),
-        email            = perfil.get("email", ""),
+        email            = email,
         profesion        = perfil.get("profesion", ""),
         descripcion      = perfil.get("descripcion", ""),
         años_experiencia = perfil.get("años_experiencia", 0),

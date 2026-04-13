@@ -11,8 +11,21 @@ import os
 # Importaciones de módulos locales: herramientas de parsing y grafo de agentes
 from agents.tools.cv_parser import get_initial_state
 from agents.graph import app_graph
-from database.database import engine
+from agents.nodes.validator import universal_validator_node
+from database.database import engine, SessionLocal
 from database.models import Base
+from database.profile_repository import guardar_perfil
+
+
+def save_candidate_to_db(perfil: dict):
+    if not isinstance(perfil, dict) or not perfil:
+        return None
+
+    db = SessionLocal()
+    try:
+        return guardar_perfil(perfil, db)
+    finally:
+        db.close()
 
 
 # Crea las tablas en app.db al arrancar (si no existen)
@@ -80,20 +93,24 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
             "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
         }
 
-        # Reejecuta el grafo de agentes con los datos corregidos
-        resultado_final = await app_graph.ainvoke(state_to_revalidate)
+        # Valida el perfil corregido directamente sin reiniciar todo el grafo
+        resultado_final = universal_validator_node(state_to_revalidate, target="profile")
+
+        # Persistir los datos corregidos siempre que haya un perfil válido o parcial
+        if corrected_data:
+            save_candidate_to_db(corrected_data)
+            print("💾 Perfil corregido guardado en persistencia correctamente.")
 
         if resultado_final.get("es_valido"):
-            # Punto de integración para persistencia: guardar en BD si es válido
-            # await save_candidate_to_db(resultado_final["perfil_normalizado"])
-            print("💾 Perfil válido: Guardado en persistencia correctamente.")
+            print("💾 Perfil válido tras revalidación.")
 
         # Retorna resultados de la revalidación
         return {
             "status": "success",
             "es_valido": resultado_final.get("es_valido"),
-            "perfil_normalizado": resultado_final.get("perfil_normalizado"),
+            "perfil_normalizado": corrected_data,
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
+            "motivo_critico": resultado_final.get("motivo_critico"),
             "historial": resultado_final.get("history")
         }
     except Exception as e:
