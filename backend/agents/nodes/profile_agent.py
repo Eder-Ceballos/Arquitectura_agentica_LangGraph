@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-light",   # Modelo original de thomas, sí existe
+    model="gemini-3-flash-preview",   # Modelo original de thomas, sí existe
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     temperature=0
 )

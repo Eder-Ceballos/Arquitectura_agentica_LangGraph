@@ -7,12 +7,15 @@ import os
 import sys
 from pathlib import Path
 
-# Asegura que el directorio raíz del proyecto y la carpeta backend estén en sys.path
+# --- CONFIGURACIÓN DE RUTAS ---
+# ROOT_DIR es la raíz del proyecto (donde están backend, agents, database, etc.)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent
+
 for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
     if path not in sys.path:
         sys.path.insert(0, path)
+
 import sqlite3
 from typing import List, Optional
 from pydantic import BaseModel
@@ -27,9 +30,9 @@ from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
 from database.vacancy_repository import obtener_todas_las_vacantes
 
-# --- CONFIGURACIÓN DE RUTA DINÁMICA ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "app.db")
+# --- CAMBIO CLAVE: RUTA DE LA DB EN database/app.db ---
+# Esto asegura que sqlite3.connect use el mismo archivo que SQLAlchemy
+DB_PATH = os.path.join(ROOT_DIR, "database", "database.db")
 
 def save_candidate_to_db(perfil: dict):
     """Utiliza el repositorio para persistir datos mediante SQLAlchemy."""
@@ -43,12 +46,16 @@ def save_candidate_to_db(perfil: dict):
     finally:
         db.close()
 
-
-# Crea las tablas en database/database.db al arrancar (si no existen)
+# Crea las tablas al arrancar (si no existen)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"🗄️  Buscando base de datos en: {DB_PATH}")
-    # Asegura que las tablas existan al iniciar el servidor en Arch
+    # Aseguramos que el directorio database exista por si acaso
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
+    print(f"🗄️  Sincronizando base de datos en: {DB_PATH}")
+    
+    # Base.metadata usa el engine definido en database/database.py
+    # Asegúrate de que en database.py la URL también apunte a database/app.db
     Base.metadata.create_all(bind=engine)
     load_static_vacancies()
     print("✅ Base de datos lista y vacantes estáticas sincronizadas.")
@@ -80,26 +87,24 @@ class ProfileUpdate(BaseModel):
 async def get_profile(email: str):
     """Obtiene datos de la DB manejando el encoding y perfiles inexistentes."""
     try:
+        # Usamos la nueva ruta DB_PATH
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Búsqueda insensible a mayúsculas
         cursor.execute("SELECT * FROM perfiles WHERE LOWER(email) = LOWER(?)", (email,))
         row = cursor.fetchone()
         
         if not row:
             conn.close()
-            # 404 limpio para que el frontend sepa que debe usar el fallback del contexto
             raise HTTPException(status_code=404, detail=f"Perfil con email {email} no encontrado")
         
         raw_data = dict(row)
         profile = {k: v for k, v in raw_data.items()}
         
-        # Corrección de encoding para años de experiencia (soporte para caracteres especiales de SQLite)
-        profile['años_experiencia'] = raw_data.get('aÃ±os_experiencia') or raw_data.get('años_experiencia') or 0
+        # Soporte para el campo de años con encoding variable
+        profile['años_experiencia'] = raw_data.get('años_experiencia') or raw_data.get('aÃ±os_experiencia') or 0
         
-        # Carga dinámica de habilidades vinculadas desde la tabla relacionada
         cursor.execute("SELECT nombre FROM habilidades WHERE id_perfil = ?", (profile['id_perfil'],))
         profile['habilidades'] = [s['nombre'] for s in cursor.fetchall()]
         
@@ -115,7 +120,6 @@ async def get_profile(email: str):
 async def update_profile(email: str, data: ProfileUpdate):
     """Actualiza la persistencia íntegra tras una edición manual en el frontend."""
     try:
-        # Construimos el diccionario con todos los campos editables
         update_data = {
             "email": email,
             "nombre": data.nombre,
@@ -126,9 +130,8 @@ async def update_profile(email: str, data: ProfileUpdate):
             "años_experiencia": data.años_experiencia
         }
         
-        # Persistimos usando SQLAlchemy
         save_candidate_to_db(update_data)
-        return {"status": "success", "message": "Registro en app.db actualizado correctamente"}
+        return {"status": "success", "message": f"Registro en {os.path.basename(DB_PATH)} actualizado"}
     except Exception as e:
         print(f"❌ Error en PUT /profile: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -138,19 +141,19 @@ async def update_profile(email: str, data: ProfileUpdate):
 @app.post("/api/v1/candidates/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
     """Recibe, analiza mediante agentes y guarda el perfil en app.db si es válido."""
-    file_path = os.path.join(BASE_DIR, "storage", "cvs", file.filename)
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    # Los CVs se guardan en backend/storage/cvs/
+    storage_path = os.path.join(BACKEND_DIR, "storage", "cvs")
+    os.makedirs(storage_path, exist_ok=True)
+    file_path = os.path.join(storage_path, file.filename)
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        # Ejecución del flujo de agentes (LangGraph)
         estado_inicial = get_initial_state(file_path)
         resultado_final = await app_graph.ainvoke(estado_inicial)
 
         if resultado_final.get("es_valido"):
-            # Guardado automático de los datos extraídos
             save_candidate_to_db(resultado_final.get("perfil_normalizado"))
 
         return {
@@ -161,9 +164,7 @@ async def upload_cv(file: UploadFile = File(...)):
             "motivo_critico": resultado_final.get("motivo_critico")
         }
     except Exception as e:
-        # Manejo de errores: retorna estado de error con detalles técnicos
         return {"status": "error", "detalle": str(e)}
-
 
 @app.get("/api/v1/vacantes")
 def list_vacantes():
@@ -174,33 +175,20 @@ def list_vacantes():
     finally:
         db.close()
 
-
-# Endpoint para revalidación de candidatos: permite corrección manual de datos y reevaluación
 @app.post("/api/v1/candidates/revalidate")
 async def revalidate_candidate(corrected_data: dict = Body(...)):
-    """
-    Recibe el JSON editado desde el frontend y vuelve a pasarlo por el validador.
-    """
     try:
-        # Construye estado para revalidación forzando evaluación del validador
         state_to_revalidate = {
             "perfil_normalizado": corrected_data,
-            "es_valido": False, # Fuerza reevaluación del validador
+            "es_valido": False,
             "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
         }
 
-        # Valida el perfil corregido directamente sin reiniciar todo el grafo
         resultado_final = universal_validator_node(state_to_revalidate, target="profile")
 
-        # Persistir los datos corregidos siempre que haya un perfil válido o parcial
         if corrected_data:
             save_candidate_to_db(corrected_data)
-            print("💾 Perfil corregido guardado en persistencia correctamente.")
 
-        if resultado_final.get("es_valido"):
-            print("💾 Perfil válido tras revalidación.")
-
-        # Retorna resultados de la revalidación
         return {
             "status": "success",
             "es_valido": resultado_final.get("es_valido"),
@@ -210,7 +198,6 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
             "historial": resultado_final.get("history")
         }
     except Exception as e:
-        # Manejo de excepciones con retorno de error detallado
         return {"status": "error", "detalle": str(e)}
 
 @app.get("/")
