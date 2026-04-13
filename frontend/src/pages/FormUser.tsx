@@ -1,7 +1,3 @@
-// FormUser.tsx - Página contenedor para formulario de validación de perfiles
-// Implementa lógica de navegación y sincronización con contexto global,
-// utilizando Next.js router y React hooks para manejo de estado y efectos.
-
 'use client';
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -9,32 +5,29 @@ import { useMagneto } from '../context/MagnetoContext';
 import Form from '../components/Form';
 
 const FormUser = () => {
-  const { magnetoState, setMagnetoState } = useMagneto();
+  const { state, setState } = useMagneto();
   const router = useRouter();
 
-  // Efecto de seguridad: redirige a home si no hay estado de agentes
   useEffect(() => {
-    if (!magnetoState) {
+    if (!state?.perfil_normalizado) {
       const timer = setTimeout(() => {
         router.push('/');
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [magnetoState, router]);
+  }, [state, router]);
 
-  // Handler de actualización: procesa datos corregidos y actualiza estado global
   const handleUpdate = (updatedProfile: any) => {
-  setMagnetoState({
-    ...magnetoState,
-    perfil_normalizado: updatedProfile.perfil_normalizado || updatedProfile,
-    es_valido: true,
-    campos_a_corregir: []
-  });
-  router.push('/Profile');
+    setState({
+      ...state,
+      perfil_normalizado: updatedProfile.perfil_normalizado || updatedProfile,
+      es_valido: true,
+      campos_a_corregir: []
+    });
+    router.push('/Profile');
   };
 
-  // Renderizado condicional: muestra loading si no hay estado de agentes
-  if (!magnetoState) {
+  if (!state?.perfil_normalizado) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
         <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
@@ -47,7 +40,6 @@ const FormUser = () => {
     );
   }
 
-  // Renderizado principal: layout con navegación y componente Form
   return (
     <div className="min-h-screen bg-slate-950">
       <div className="max-w-5xl mx-auto py-12 px-4">
@@ -57,9 +49,8 @@ const FormUser = () => {
         >
           ← Volver a subir archivo
         </button>
-
         <Form
-          state={magnetoState}
+          state={state}
           onUpdate={handleUpdate}
         />
       </div>

@@ -3,15 +3,17 @@ import { useRouter } from 'next/router';
 import { useMagneto } from '../context/MagnetoContext'; 
 import { 
   Mail, MapPin, Briefcase, ShieldCheck, Search, Edit3, Save, GraduationCap, 
-  AlertCircle, ArrowLeft, ClipboardList, X, Terminal, Plus
+  AlertCircle, X, Terminal, Plus
 } from 'lucide-react';
+import DashboardPage from './DashboardPage';
 
 const Profile = () => {
   const router = useRouter();
   const { state } = useMagneto(); 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
-  const [newSkill, setNewSkill] = useState(''); 
+  const [newSkill, setNewSkill] = useState('');
+  const [showLogs, setShowLogs] = useState(false);
   
   const [editSections, setEditSections] = useState({
     header: false,
@@ -21,7 +23,6 @@ const Profile = () => {
   });
 
   const fetchProfile = useCallback(async () => {
-    // Priorizamos el email del estado global de Magneto
     const emailToFetch = state?.perfil_normalizado?.email;
     
     if (!emailToFetch) {
@@ -37,7 +38,6 @@ const Profile = () => {
         const data = await res.json();
         setProfile(data);
       } else {
-        // Fallback al estado local si la API falla o el perfil es nuevo
         setProfile(state.perfil_normalizado);
       }
     } catch (err) {
@@ -59,7 +59,6 @@ const Profile = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...profile,
-          // Limpieza de tipos para SQLite
           años_experiencia: parseInt(profile.años_experiencia) || 0,
           habilidades: profile.habilidades || []
         })
@@ -198,8 +197,10 @@ const Profile = () => {
               <button onClick={() => router.push('/Matching')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition-all active:scale-95">
                 <Search size={16}/> BUSCAR VACANTES
               </button>
-              <button className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 text-slate-500 py-4 rounded-2xl font-bold text-xs hover:text-indigo-400 hover:border-indigo-500/50 transition-all">
-                <Terminal size={16}/> AGENT LOGS
+              <button
+                onClick={() => setShowLogs(!showLogs)}
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 text-slate-500 py-4 rounded-2xl font-bold text-xs hover:text-indigo-400 hover:border-indigo-500/50 transition-all">
+                <Terminal size={16}/> {showLogs ? 'HIDE LOGS' : 'AGENT LOGS'}
               </button>
             </div>
           </div>
@@ -269,6 +270,14 @@ const Profile = () => {
             </div>
           </div>
         </div>
+
+        {/* --- DASHBOARD DE AGENTES --- */}
+        {showLogs && (
+          <div className="mt-4">
+            <DashboardPage />
+          </div>
+        )}
+
       </div>
     </div>
   );
