@@ -1,7 +1,16 @@
 import os
+import sys
+from pathlib import Path
 from click import prompt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState, PerfilNormalizado
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
 from database.database import SessionLocal
 from database.profile_repository import guardar_perfil
 from dotenv import load_dotenv

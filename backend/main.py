@@ -7,6 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import shutil
 import os
+import sys
+from pathlib import Path
+
+# Asegura que el directorio raíz del proyecto y la carpeta backend estén en sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent
+for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Importaciones de módulos locales: herramientas de parsing y grafo de agentes
 from agents.tools.cv_parser import get_initial_state
@@ -14,7 +23,9 @@ from agents.graph import app_graph
 from agents.nodes.validator import universal_validator_node
 from database.database import engine, SessionLocal
 from database.models import Base
+from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
+from database.vacancy_repository import obtener_todas_las_vacantes
 
 
 def save_candidate_to_db(perfil: dict):
@@ -28,12 +39,13 @@ def save_candidate_to_db(perfil: dict):
         db.close()
 
 
-# Crea las tablas en app.db al arrancar (si no existen)
+# Crea las tablas en database/database.db al arrancar (si no existen)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🗄️  Inicializando base de datos...")
     Base.metadata.create_all(bind=engine)
-    print("✅ Base de datos lista.")
+    load_static_vacancies()
+    print("✅ Base de datos lista y vacantes estáticas sincronizadas.")
     yield
 
 
@@ -78,6 +90,17 @@ async def upload_cv(file: UploadFile = File(...)):
     except Exception as e:
         # Manejo de errores: retorna estado de error con detalles técnicos
         return {"status": "error", "detalle": str(e)}
+
+
+@app.get("/api/v1/vacantes")
+def list_vacantes():
+    db = SessionLocal()
+    try:
+        vacantes = [vacante.to_dict() for vacante in obtener_todas_las_vacantes(db)]
+        return {"status": "success", "vacantes": vacantes}
+    finally:
+        db.close()
+
 
 # Endpoint para revalidación de candidatos: permite corrección manual de datos y reevaluación
 @app.post("/api/v1/candidates/revalidate")
