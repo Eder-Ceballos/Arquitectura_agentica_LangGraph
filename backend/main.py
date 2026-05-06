@@ -7,6 +7,8 @@ import os
 from dotenv import load_dotenv
 import sys
 from pathlib import Path
+from auth_utils import hash_password, verify_password, create_access_token
+from sqlalchemy.orm import Session
 load_dotenv()
 
 # --- CONFIGURACIÓN DE RUTAS ---
@@ -27,7 +29,7 @@ from agents.tools.cv_parser import get_initial_state
 from agents.graph import app_graph
 from agents.nodes.validator import universal_validator_node
 from database.database import engine, SessionLocal
-from database.models import Base
+from database.models import Base, Perfil
 from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
 from database.vacancy_repository import obtener_todas_las_vacantes
@@ -82,6 +84,63 @@ class ProfileUpdate(BaseModel):
     ubicacion: Optional[str] = "No especificada"
     profesion: Optional[str] = "No especificada"
     años_experiencia: Optional[int] = 0
+
+
+# --- ENDPOINTS DE AUTENTICACIÓN ---
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/v1/auth/register")
+async def register(perfil_data: dict = Body(...)):
+    """Registra un nuevo perfil con contraseña hasheada."""
+    db = SessionLocal()
+    try:
+        # 1. Extraer la contraseña y hashearla
+        raw_password = perfil_data.get("password")
+        if not raw_password:
+            raise HTTPException(status_code=400, detail="La contraseña es obligatoria")
+        
+        perfil_data["password_hash"] = hash_password(raw_password)
+        
+        # 2. Guardar usando tu repositorio
+        perfil_orm = guardar_perfil(perfil_data, db)
+        return {"status": "success", "message": "Usuario registrado exitosamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.post("/api/v1/auth/login")
+async def login(credentials: LoginRequest):
+    """Verifica credenciales y devuelve un token JWT."""
+    db = SessionLocal()
+    try:
+        # Buscar el perfil por email
+        user = db.query(Perfil).filter(Perfil.email == credentials.email).first()
+        
+        if not user or not user.password_hash:
+            raise HTTPException(status_code=401, detail="Usuario no encontrado")
+        
+        # Verificar contraseña
+        if not verify_password(credentials.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+        
+        # Crear el token
+        token = create_access_token({"sub": user.email})
+        
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "email": user.email,
+                "nombre": user.nombre,
+                "id": user.id_perfil
+            }
+        }
+    finally:
+        db.close()
 
 # --- ENDPOINTS DE CONSULTA Y EDICIÓN ---
 

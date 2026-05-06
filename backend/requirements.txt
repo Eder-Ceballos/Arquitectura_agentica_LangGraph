@@ -1,19 +1,32 @@
-# Framework Base
-fastapi
-uvicorn
-pydantic
-pydantic-settings
-python-dotenv
+# --- Framework Base y Servidor ---
+fastapi==0.135.2
+uvicorn==0.42.0
+pydantic==2.12.5
+pydantic-settings==2.13.1
+python-dotenv==1.2.2
+python-multipart==0.0.22
 
-# IA y Orquestación
-langgraph
-langchain-google-genai
+# --- IA y Orquestación (LangGraph) ---
+langgraph==1.1.4
+langchain-core==1.2.23
+langchain-google-genai==4.2.1
+google-genai==1.70.0
 
-# Base de Datos (Persistencia)
-sqlalchemy
-psycopg2-binary
+# --- Seguridad y Autenticación (NUEVO) ---
+passlib==1.7.4
+bcrypt==5.0.0
+python-jose==3.5.0
+cryptography==46.0.6
 
-# Procesamiento de Documentos (Hojas de Vida)
-pypdf
-python-docx
-python-multipart
+# --- Base de Datos (Persistencia) ---
+SQLAlchemy==2.0.48
+psycopg2-binary==2.9.11
+
+# --- Procesamiento de Documentos ---
+pypdf==6.9.2
+python-docx==1.2.0
+
+# --- Utilidades y Dependencias del Sistema ---
+requests==2.33.1
+httpx==0.28.1
+typing_extensions==4.15.0
