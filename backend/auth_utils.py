@@ -8,16 +8,20 @@ SECRET_KEY = os.getenv("SECRET_KEY", "magneto_token_secret_2024_EAFIT")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440 
 
-# Configuramos Passlib para usar bcrypt internamente
+# Configuramos Passlib para que use el algoritmo bcrypt internamente
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str):
-    """Encripta la contraseña usando Passlib (maneja automáticamente el salt)."""
-    # Passlib ya se encarga de los límites de bytes y el hashing seguro
+    """
+    Usa passlib para hashear. No necesitas recortar manualmente 
+    ni generar el salt, passlib lo hace todo por ti.
+    """
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str):
-    """Verifica la contraseña comparándola con el hash guardado."""
+    """
+    Compara la clave en texto plano con el hash de la DB.
+    """
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
