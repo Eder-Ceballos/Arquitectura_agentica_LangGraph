@@ -12,7 +12,7 @@ langchain-core==1.2.23
 langchain-google-genai==4.2.1
 google-genai==1.70.0
 
-# --- Seguridad y Autenticación (NUEVO) ---
+# --- Seguridad y Autenticación ---
 passlib==1.7.4
 bcrypt==5.0.0
 python-jose==3.5.0
