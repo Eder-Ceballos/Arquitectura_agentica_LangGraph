@@ -3,7 +3,6 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from jose import jwt
 import os
-import bcrypt
 
 # Configuración básica
 # En el futuro, esto lo moveremos a tu archivo .env
