@@ -62,7 +62,9 @@ def _dict_a_orm(perfil: dict) -> Perfil:
         disponibilidad=perfil.get("disponibilidad", ""),
         discapacidades=perfil.get("discapacidades", ""),
         ubicacion=perfil.get("ubicacion", ""),
-        is_human_verified=False
+        is_human_verified=False,
+        password_hash=perfil.get("password_hash")
+        
     )
 
 
@@ -80,6 +82,8 @@ def _actualizar_campos(perfil_orm: Perfil, perfil: dict) -> None:
     perfil_orm.disponibilidad = perfil.get("disponibilidad", perfil_orm.disponibilidad)
     perfil_orm.discapacidades = perfil.get("discapacidades", perfil_orm.discapacidades)
     perfil_orm.ubicacion = perfil.get("ubicacion", perfil_orm.ubicacion)
+    if perfil.get("password_hash"):
+        perfil_orm.password_hash = perfil.get("password_hash")
 
 
 def _sincronizar_habilidades(perfil_orm: Perfil, habilidades_nuevas: list, db: Session) -> None:

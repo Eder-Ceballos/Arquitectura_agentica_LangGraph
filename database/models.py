@@ -35,6 +35,8 @@ class Perfil(Base):
     is_human_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    password_hash = Column(String, nullable=True) 
+    last_login = Column(DateTime, nullable=True)
 
     habilidades = relationship(
         "Habilidad",
