@@ -1,10 +1,12 @@
 import json
 import os
+import time
 from typing import Dict, Any
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from agents.state import AgentState
+from agents.logger import log_agent_action
 
 # Cargar variables de entorno
 load_dotenv()
@@ -16,14 +18,16 @@ llm = ChatGoogleGenerativeAI(
     temperature=0 
 )
 
+AGENTE = "agente_perfil"
+
+
 def universal_validator_node(state: AgentState, target: str = "profile") -> Dict[str, Any]:
     """
     Nodo universal adaptado al nuevo AgentState de Magneto.
     Valida la calidad del 'perfil_normalizado' o la 'vacante_normalizada'.
     """
-    
-    # 1. Extraer los datos del nuevo State según el objetivo
-    print(f"Iniciando agente validator para {target}. State recibido: {state}")
+    run_id = state.get("run_id", "sin-run-id")
+
     if target == "profile":
         data = state.get("perfil_normalizado")
         display_name = data.get("nombre") if data else None
@@ -33,23 +37,33 @@ def universal_validator_node(state: AgentState, target: str = "profile") -> Dict
         display_name = data.get("cargo") if data else None
         contexto_nombre = "Vacante de Empleo"
 
-    # Validación temprana si el diccionario está vacío o no tiene identificación básica
+    log_agent_action(
+        run_id=run_id,
+        agente=AGENTE,
+        evento="validacion_iniciada",
+        mensaje=f"Iniciando validación de {contexto_nombre}: '{display_name or 'sin identificación'}'.",
+    )
+
     if not data or not display_name:
+        log_agent_action(
+            run_id=run_id,
+            agente=AGENTE,
+            evento="validacion_sin_datos",
+            mensaje="No se encontraron datos iniciales para validar.",
+            nivel="WARNING",
+        )
         return {
             "es_valido": False,
             "campos_a_corregir": ["Nombre/Cargo", "Habilidades/Requisitos"],
             "history": state.get("history", []) + [{
-                "agent": f"{target}_validator", 
-                "status": "failed_no_data",
-                "reason": "No se encontraron datos iniciales para validar."
-            }]
+                "agente": AGENTE,
+                "evento": "validacion_sin_datos",
+            }],
         }
 
-    # 2. Construir el prompt usando los campos exactos del nuevo State
-    # Extraemos skills/habilidades manejando que son listas
     habilidades_str = ", ".join(data.get("habilidades", [])) if isinstance(data.get("habilidades"), list) else "No especificadas"
-    
-    prompt = f"""
+
+    validation_prompt = f"""
     Eres el experto en calidad de la plataforma Magneto. Analiza los datos de {contexto_nombre}:
     - Identificación: {display_name}
     - Ubicación: {data.get("ubicacion") or data.get("requisitos", "No especificada")}
@@ -65,43 +79,61 @@ def universal_validator_node(state: AgentState, target: str = "profile") -> Dict
     }}
     """
 
+    t0 = time.time()
     try:
-        # 3. Llamada a Gemini
-        response = llm.invoke([HumanMessage(content=prompt)])
-        text = response.content
-        
-        # Si 'content' es una lista (sucede en algunas versiones de LangChain/Gemini), 
-        # tomamos el texto del primer elemento.
+        response = llm.invoke([HumanMessage(content=validation_prompt)])
+
         if isinstance(response.content, list):
             text = str(response.content[0].get("text", response.content[0]))
         else:
             text = str(response.content)
 
-        # 4. Limpieza y Parseo del JSON
         start_idx = text.find('{')
         end_idx = text.rfind('}') + 1
         result = json.loads(text[start_idx:end_idx])
-        
+
         es_valido = result.get("es_valido", False)
-        print(f"Validator terminado para {target}. Retorno: {result}. es_valido: {es_valido}")
-        
-        # 5. Retornar el parche de estado alineado con state.py
+        duracion = int((time.time() - t0) * 1000)
+
+        log_agent_action(
+            run_id=run_id,
+            agente=AGENTE,
+            evento="validacion_completada",
+            mensaje=f"Validación de {contexto_nombre} {'aprobada' if es_valido else 'rechazada'}: {result.get('motivo_critico', '')}",
+            nivel="INFO" if es_valido else "WARNING",
+            duracion_ms=duracion,
+            detalle={
+                "es_valido": es_valido,
+                "campos_a_corregir": result.get("campos_a_corregir", []),
+                "motivo_critico": result.get("motivo_critico", ""),
+            },
+        )
+
         return {
             "es_valido": es_valido,
             "campos_a_corregir": result.get("campos_a_corregir", []),
             "motivo_critico": result.get("motivo_critico", ""),
-            "history": [{ # Gracias a operator.add, esto se sumará a la lista existente
-                "agent": f"{target}_validator", 
-                "status": "success" if es_valido else "incomplete", 
-                "reason": result.get("motivo_critico", "")
-            }]
+            "history": [{
+                "agente": AGENTE,
+                "evento": "validacion_completada",
+                "es_valido": es_valido,
+            }],
         }
-        
+
     except Exception as e:
-        print(f"Error en validación de {target}: {e}")
+        duracion = int((time.time() - t0) * 1000)
+        log_agent_action(
+            run_id=run_id,
+            agente=AGENTE,
+            evento="error_validacion",
+            mensaje=f"Error en validación de {target}: {e}",
+            nivel="ERROR",
+            duracion_ms=duracion,
+            detalle={"error": str(e)},
+        )
         return {
             "es_valido": False,
             "campos_a_corregir": ["Error de conexión con el validador"],
             "motivo_critico": str(e),
-            "history": [{"agent": f"{target}_validator", "status": "error", "reason": str(e)}]
+            "history": [{"agente": AGENTE, "evento": "error_validacion", "detalle": str(e)}],
         }

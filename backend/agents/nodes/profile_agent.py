@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from pathlib import Path
 from click import prompt
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -13,6 +14,7 @@ for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
 
 from database.database import SessionLocal
 from database.profile_repository import guardar_perfil
+from agents.logger import log_agent_action
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -107,26 +109,34 @@ def _has_meaningful_profile(perfil):
     ) or bool(perfil.get("habilidades"))
 
 
-def profile_node(state: AgentState):
-    print("[Agente de Perfil] Analizando texto del CV ...")
+AGENTE = "agente_perfil"
 
+
+def profile_node(state: AgentState):
+    run_id = state.get("run_id", "sin-run-id")
     texto_cv = state.get("pdf_file", "")
 
-    prompt = f"""
-    Actúa como un experto en reclutamiento IT. 
-    Analiza el siguiente texto extraído de un currículum y organiza la información 
+    log_agent_action(
+        run_id=run_id,
+        agente=AGENTE,
+        evento="extraccion_iniciada",
+        mensaje="Analizando texto del CV con Gemini.",
+    )
+
+    extraction_prompt = f"""
+    Actúa como un experto en reclutamiento IT.
+    Analiza el siguiente texto extraído de un currículum y organiza la información
     siguiendo estrictamente el esquema proporcionado.
-    
+
     TEXTO DEL CV:
     {texto_cv}
     """
 
+    t0 = time.time()
     try:
-        resultado_raw = structured_llm.invoke(prompt)
+        resultado_raw = structured_llm.invoke(extraction_prompt)
         resultado_final = _normalize_profile_data(resultado_raw)
-
-        print("✅ [DEBUG] Perfil extraído y normalizado:")
-        print(resultado_final)
+        duracion = int((time.time() - t0) * 1000)
 
         if _has_meaningful_profile(resultado_final):
             db = SessionLocal()
@@ -134,32 +144,47 @@ def profile_node(state: AgentState):
                 guardar_perfil(resultado_final, db)
             finally:
                 db.close()
-            history = [{
-                "agente": "perfil",
-                "evento": "extracción_completada",
-                "mensaje": f"Perfil de {resultado_final.get('nombre', 'Desconocido')} extraído y guardado en BD."
-            }]
+
+            log_agent_action(
+                run_id=run_id,
+                agente=AGENTE,
+                evento="extraccion_completada",
+                mensaje=f"Perfil de '{resultado_final.get('nombre', 'Desconocido')}' extraído y guardado en BD.",
+                duracion_ms=duracion,
+                detalle={"nombre": resultado_final.get("nombre"), "email": resultado_final.get("email")},
+            )
+            history = [{"agente": AGENTE, "evento": "extraccion_completada"}]
+            status_db = "sync"
         else:
-            print("⚠️ Perfil sin datos significativos: no se guarda en BD.")
-            history = [{
-                "agente": "perfil",
-                "evento": "extracción_incompleta",
-                "mensaje": "El CV no contenía datos significativos y no se persistió."
-            }]
+            log_agent_action(
+                run_id=run_id,
+                agente=AGENTE,
+                evento="extraccion_incompleta",
+                mensaje="El CV no contenía datos significativos y no se persistió.",
+                nivel="WARNING",
+                duracion_ms=duracion,
+            )
+            history = [{"agente": AGENTE, "evento": "extraccion_incompleta"}]
+            status_db = "pending"
 
         return {
             "perfil_normalizado": resultado_final,
-            "status_db": "sync" if _has_meaningful_profile(resultado_final) else "pending",
-            "history": history
+            "status_db": status_db,
+            "history": history,
         }
 
     except Exception as e:
-        print(f"❌ Error durante la llamada a Gemini: {e}")
+        duracion = int((time.time() - t0) * 1000)
+        log_agent_action(
+            run_id=run_id,
+            agente=AGENTE,
+            evento="error_extraccion",
+            mensaje=f"Error durante la llamada a Gemini: {e}",
+            nivel="ERROR",
+            duracion_ms=duracion,
+            detalle={"error": str(e)},
+        )
         return {
             "status_db": "error",
-            "history": [{
-                "agente": "perfil",
-                "evento": "error_ia",
-                "detalle": str(e)
-            }]
+            "history": [{"agente": AGENTE, "evento": "error_extraccion", "detalle": str(e)}],
         }

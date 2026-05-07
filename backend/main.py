@@ -1,9 +1,11 @@
 # main.py - API Backend para Magneto: Sistema de Agentes IA
-from fastapi import FastAPI, UploadFile, File, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Body, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import shutil
 import os
+import uuid
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import sys
 from pathlib import Path
@@ -33,6 +35,14 @@ from database.models import Base, Perfil
 from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
 from database.vacancy_repository import obtener_todas_las_vacantes
+from ranking import calcular_ranking
+from database.log_repository import (
+    obtener_logs_por_run,
+    obtener_logs_recientes,
+    obtener_logs_por_agente,
+    obtener_estado_agentes,
+)
+from agents.logger import imprimir_historial
 
 # --- CAMBIO CLAVE: RUTA DE LA DB EN database/app.db ---
 # Esto asegura que sqlite3.connect use el mismo archivo que SQLAlchemy
@@ -211,21 +221,48 @@ async def upload_cv(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     try:
+        run_id = str(uuid.uuid4())
         estado_inicial = get_initial_state(file_path)
+        estado_inicial["run_id"] = run_id
         resultado_final = await app_graph.ainvoke(estado_inicial)
+        imprimir_historial(run_id, resultado_final.get("history", []))
 
         if resultado_final.get("es_valido"):
             save_candidate_to_db(resultado_final.get("perfil_normalizado"))
 
         return {
             "status": "success",
+            "run_id": run_id,
             "perfil_normalizado": resultado_final.get("perfil_normalizado"),
             "es_valido": resultado_final.get("es_valido"),
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
-            "motivo_critico": resultado_final.get("motivo_critico")
+            "motivo_critico": resultado_final.get("motivo_critico"),
         }
     except Exception as e:
         return {"status": "error", "detalle": str(e)}
+
+@app.get("/api/v1/candidates/ranking")
+def get_ranking(email: str = Query(..., description="Email del candidato")):
+    """Devuelve las vacantes ordenadas por compatibilidad con el perfil del candidato."""
+    db = SessionLocal()
+    try:
+        perfil_orm = db.query(Perfil).filter(Perfil.email == email).first()
+        if not perfil_orm:
+            raise HTTPException(status_code=404, detail=f"Perfil con email '{email}' no encontrado")
+
+        perfil = {
+            "habilidades": [h.nombre for h in perfil_orm.habilidades],
+            "años_experiencia": perfil_orm.años_experiencia,
+            "salario": perfil_orm.salario,
+            "ubicacion": perfil_orm.ubicacion,
+        }
+
+        vacantes = obtener_todas_las_vacantes(db)
+        ranking = calcular_ranking(perfil, vacantes)
+        return {"status": "success", "candidato": perfil_orm.nombre, "ranking": ranking}
+    finally:
+        db.close()
+
 
 @app.get("/api/v1/vacantes")
 def list_vacantes():
@@ -239,10 +276,12 @@ def list_vacantes():
 @app.post("/api/v1/candidates/revalidate")
 async def revalidate_candidate(corrected_data: dict = Body(...)):
     try:
+        run_id = str(uuid.uuid4())
         state_to_revalidate = {
             "perfil_normalizado": corrected_data,
             "es_valido": False,
-            "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
+            "run_id": run_id,
+            "history": [{"agente": "frontend_form", "evento": "correccion_manual"}],
         }
 
         resultado_final = universal_validator_node(state_to_revalidate, target="profile")
@@ -252,14 +291,63 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
 
         return {
             "status": "success",
+            "run_id": run_id,
             "es_valido": resultado_final.get("es_valido"),
             "perfil_normalizado": corrected_data,
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
             "motivo_critico": resultado_final.get("motivo_critico"),
-            "historial": resultado_final.get("history")
+            "historial": resultado_final.get("history"),
         }
     except Exception as e:
         return {"status": "error", "detalle": str(e)}
+
+@app.get("/api/v1/agents/status")
+def get_agents_status():
+    """
+    Devuelve el estado actual de cada agente basado en sus logs más recientes.
+    Alimenta el polling del DashboardPage del frontend.
+    Los agentes sin actividad aún no aparecen (el frontend mantiene su estado mock).
+    """
+    db = SessionLocal()
+    try:
+        estado = obtener_estado_agentes(db)
+        return {
+            "agents": estado,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/logs")
+def list_logs(
+    limit: int = Query(default=50, ge=1, le=500),
+    agente: Optional[str] = Query(default=None, description="Filtrar por agente (ej: agente_perfil)"),
+):
+    """Retorna los logs más recientes, opcionalmente filtrados por agente."""
+    db = SessionLocal()
+    try:
+        if agente:
+            logs = obtener_logs_por_agente(agente, db, limit=limit)
+        else:
+            logs = obtener_logs_recientes(db, limit=limit)
+        return {"status": "success", "total": len(logs), "logs": [log.to_dict() for log in logs]}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/logs/{run_id}")
+def get_logs_by_run(run_id: str):
+    """Retorna todos los logs de una ejecución específica del grafo."""
+    db = SessionLocal()
+    try:
+        logs = obtener_logs_por_run(run_id, db)
+        if not logs:
+            raise HTTPException(status_code=404, detail=f"No se encontraron logs para run_id: {run_id}")
+        return {"status": "success", "run_id": run_id, "total": len(logs), "logs": [log.to_dict() for log in logs]}
+    finally:
+        db.close()
+
 
 @app.get("/")
 def root():

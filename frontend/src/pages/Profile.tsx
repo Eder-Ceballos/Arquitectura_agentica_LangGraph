@@ -6,6 +6,7 @@ import {
   AlertCircle, X, Terminal, Plus
 } from 'lucide-react';
 import DashboardPage from './DashboardPage';
+import RankingTable from '../components/RankingTable';
 
 const Profile = () => {
   const router = useRouter();
@@ -270,6 +271,17 @@ const Profile = () => {
             </div>
           </div>
         </div>
+
+        {/* --- RANKING DE COMPATIBILIDAD --- */}
+        {state?.perfil_normalizado?.email && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 mt-2">
+            <RankingTable
+              email={state.perfil_normalizado.email}
+              nombreCandidato={profile?.nombre || state.perfil_normalizado.nombre || ""}
+              dark={true}
+            />
+          </div>
+        )}
 
         {/* --- DASHBOARD DE AGENTES --- */}
         {showLogs && (

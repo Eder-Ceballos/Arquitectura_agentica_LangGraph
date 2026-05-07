@@ -5,6 +5,7 @@ interface MagnetoState {
   perfil_normalizado: any | null;
   es_valido: boolean;
   history: any[];
+  run_id: string | null;
   token: string | null;
   isAuthenticated: boolean;
 }
@@ -16,7 +17,8 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
     perfil_normalizado: null,
     es_valido: false,
     history: [],
-    token: null, // Se cargará en el useEffect
+    run_id: null,
+    token: null,
     isAuthenticated: false,
   });
 
@@ -39,6 +41,17 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
   const updateState = (newState: Partial<MagnetoState>) => {
     setState(prev => {
       const updated = { ...prev, ...newState };
+      // Si el nuevo perfil no trae email, conservar el del perfil anterior (ej: el del login)
+      if (
+        updated.perfil_normalizado &&
+        !updated.perfil_normalizado.email &&
+        prev.perfil_normalizado?.email
+      ) {
+        updated.perfil_normalizado = {
+          ...updated.perfil_normalizado,
+          email: prev.perfil_normalizado.email,
+        };
+      }
       if (updated.perfil_normalizado) {
         localStorage.setItem('last_magneto_profile', JSON.stringify(updated.perfil_normalizado));
       }
@@ -55,7 +68,8 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
       token: token,
       isAuthenticated: true,
       es_valido: true,
-      history: []
+      history: [],
+      run_id: null,
     });
   };
 
@@ -66,7 +80,8 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
       token: null,
       isAuthenticated: false,
       es_valido: false,
-      history: []
+      history: [],
+      run_id: null,
     });
   };
 

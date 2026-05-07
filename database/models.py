@@ -95,3 +95,33 @@ class Vacante(Base):
 
     def __repr__(self):
         return f"<Vacante id_vacante={self.id_vacante} cargo='{self.cargo}'>"
+
+
+class AgentLog(Base):
+    __tablename__ = "agent_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String, nullable=False, index=True)
+    agente = Column(String, nullable=False, index=True)  # ej: "agente_perfil", "agente_recomendaciones"
+    evento = Column(String, nullable=False)              # ej: "extraccion_iniciada", "validacion_completada"
+    nivel = Column(String, nullable=False, default="INFO")
+    mensaje = Column(Text, nullable=True)
+    detalle = Column(Text, nullable=True)                # JSON serializado con contexto adicional
+    duracion_ms = Column(Integer, nullable=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "agente": self.agente,
+            "evento": self.evento,
+            "nivel": self.nivel,
+            "mensaje": self.mensaje,
+            "detalle": self.detalle,
+            "duracion_ms": self.duracion_ms,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+    def __repr__(self):
+        return f"<AgentLog run_id={self.run_id} agente='{self.agente}' evento='{self.evento}'>"

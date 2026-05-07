@@ -1,41 +1,60 @@
 import React, { useState, useEffect, useCallback } from "react";
-import type { AgentMeta } from "../types/agents";
+import type { AgentId, AgentMeta } from "../types/agents";
 import { AGENTS_MOCK } from "../types/mockData";
 import AgentCard from "../components/AgentCard";
 import FlowBar from "../components/FlowBar";
 import DetailPanel from "../components/DetailPanel";
+import RankingTable from "../components/RankingTable";
+import { useMagneto } from "../context/MagnetoContext";
 
-// ============================================================
-// Hook de polling — cuando el backend esté listo, cambiar la
-// URL y descomentar el fetch real. Todo lo demás queda igual.
-// ============================================================
+// Mapeo: nombre del agente en BD → AgentIds del frontend que representa.
+// Cuando se implemente un nuevo agente en el backend, agregar su entrada aquí.
+const BACKEND_TO_FRONTEND: Record<string, AgentId[]> = {
+  agente_perfil: ["profile_agent", "validador_candidato"],
+  agente_recomendaciones: ["advisor_agent"],
+  agente_postulaciones: ["application_agent"],
+  agente_seguimiento: ["tracker_agent"],
+};
+
 function useAgentsStatus(intervalMs = 10000) {
   const [agents, setAgents] = useState<AgentMeta[]>(AGENTS_MOCK);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [secondsAgo, setSecondsAgo] = useState(0);
 
   const refresh = useCallback(async () => {
-    // TODO: descomentar cuando el backend esté listo
-    // try {
-    //   const res = await fetch("/api/agents/status");
-    //   const data: AgentsStatusResponse = await res.json();
-    //   setAgents(prev =>
-    //     prev.map(a => ({
-    //       ...a,
-    //       status: data.agents[a.id]?.status ?? a.status,
-    //       currentAction: data.agents[a.id]?.current_action ?? a.currentAction,
-    //       processedToday: data.agents[a.id]?.processed_today ?? a.processedToday,
-    //     }))
-    //   );
-    // } catch (e) {
-    //   console.error("Error polling /api/agents/status:", e);
-    // }
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/agents/status");
+      if (!res.ok) throw new Error("Error al obtener estado de agentes");
+      const data = await res.json();
+
+      setAgents((prev) =>
+        prev.map((a) => {
+          // Buscar si este AgentId tiene datos reales del backend
+          const backendKey = Object.entries(BACKEND_TO_FRONTEND).find(([, ids]) =>
+            ids.includes(a.id)
+          )?.[0];
+          const backendData = backendKey ? data.agents[backendKey] : undefined;
+
+          return backendData
+            ? {
+                ...a,
+                status: backendData.status ?? a.status,
+                currentAction: backendData.current_action ?? a.currentAction,
+                processedToday: backendData.processed_today ?? a.processedToday,
+              }
+            : a;
+        })
+      );
+    } catch {
+      // Sin conexión: conservar estado previo
+    }
     setLastUpdated(new Date());
     setSecondsAgo(0);
   }, []);
 
   // Polling
   useEffect(() => {
+    refresh();
     const poll = setInterval(refresh, intervalMs);
     return () => clearInterval(poll);
   }, [refresh, intervalMs]);
@@ -64,7 +83,11 @@ function countByStatus(agents: AgentMeta[]) {
 // ============================================================
 const DashboardPage: React.FC = () => {
   const { agents, secondsAgo, refresh } = useAgentsStatus();
+  const { state } = useMagneto();
   const [selectedId, setSelectedId] = useState<AgentMeta["id"] | null>(null);
+
+  const candidatoEmail: string = state.perfil_normalizado?.email ?? "";
+  const candidatoNombre: string = state.perfil_normalizado?.nombre ?? "";
 
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
   const counts = countByStatus(agents);
@@ -173,6 +196,11 @@ const DashboardPage: React.FC = () => {
           />
         ))}
       </div>
+
+      {/* Ranking de compatibilidad */}
+      {candidatoEmail && (
+        <RankingTable email={candidatoEmail} nombreCandidato={candidatoNombre} />
+      )}
 
       {/* Leyenda de estados */}
       <div
