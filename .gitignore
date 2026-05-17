@@ -1,4 +1,3 @@
-cat <<EOF > .gitignore
 # Python
 __pycache__/
 *.py[cod]
@@ -19,4 +18,17 @@ build/
 
 # OS
 .DS_Store
-EOF
+
+# Base de datos con datos de usuarios (no va al repo)
+database/database.db
+*.db
+*.sqlite
+
+# Logs de runtime
+backend/logs/
+
+# CVs subidos por usuarios
+backend/storage/cvs/
+
+# Claude Code internal
+.claude/

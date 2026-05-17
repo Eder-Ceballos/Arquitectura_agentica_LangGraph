@@ -12,6 +12,15 @@ interface MagnetoState {
 
 export const MagnetoContext = createContext<any>(null);
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
+
 export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, setState] = useState<MagnetoState>({
     perfil_normalizado: null,
@@ -22,18 +31,46 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
     isAuthenticated: false,
   });
 
-  // PERSISTENCIA: Al cargar, recuperamos el token y el último perfil
+  // PERSISTENCIA: Al cargar, recuperamos el token y validamos que no haya expirado.
+  // Luego hacemos un fetch fresco del perfil desde el backend para garantizar
+  // que habilidades y datos del CV estén siempre actualizados.
   useEffect(() => {
     const token = localStorage.getItem('token');
+    if (!token) return;
+
+    if (isTokenExpired(token)) {
+      localStorage.clear();
+      return;
+    }
+
     const savedProfile = localStorage.getItem('last_magneto_profile');
-    
-    if (token) {
-      setState(prev => ({
-        ...prev,
-        token: token,
-        isAuthenticated: true,
-        perfil_normalizado: savedProfile ? JSON.parse(savedProfile) : null
-      }));
+    const parsedProfile = savedProfile ? JSON.parse(savedProfile) : null;
+
+    // Restore immediately from localStorage so the UI no longer flickers
+    setState(prev => ({
+      ...prev,
+      token,
+      isAuthenticated: true,
+      perfil_normalizado: parsedProfile,
+      es_valido: !!(parsedProfile?.habilidades?.length > 0 || parsedProfile?.profesion),
+    }));
+
+    // Fetch fresh profile in background to pick up any DB changes
+    const email = parsedProfile?.email;
+    if (email) {
+      fetch(`http://localhost:8000/api/v1/profile/${encodeURIComponent(email)}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (!data) return;
+          const fullProfile = { ...data, id: data.id_perfil, es_valido: true };
+          setState(prev => ({
+            ...prev,
+            perfil_normalizado: fullProfile,
+            es_valido: true,
+          }));
+          localStorage.setItem('last_magneto_profile', JSON.stringify(fullProfile));
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -41,15 +78,15 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
   const updateState = (newState: Partial<MagnetoState>) => {
     setState(prev => {
       const updated = { ...prev, ...newState };
-      // Si el nuevo perfil no trae email, conservar el del perfil anterior (ej: el del login)
-      if (
-        updated.perfil_normalizado &&
-        !updated.perfil_normalizado.email &&
-        prev.perfil_normalizado?.email
-      ) {
+      // Preservar email, id e id_perfil del perfil anterior si el nuevo no los trae
+      if (updated.perfil_normalizado && prev.perfil_normalizado) {
+        const prev_p = prev.perfil_normalizado;
+        const next_p = updated.perfil_normalizado;
         updated.perfil_normalizado = {
-          ...updated.perfil_normalizado,
-          email: prev.perfil_normalizado.email,
+          ...next_p,
+          email:      next_p.email      || prev_p.email      || "",
+          id:         next_p.id         ?? next_p.id_perfil  ?? prev_p.id         ?? prev_p.id_perfil ?? null,
+          id_perfil:  next_p.id_perfil  ?? next_p.id         ?? prev_p.id_perfil  ?? prev_p.id        ?? null,
         };
       }
       if (updated.perfil_normalizado) {

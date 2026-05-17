@@ -125,3 +125,31 @@ class AgentLog(Base):
 
     def __repr__(self):
         return f"<AgentLog run_id={self.run_id} agente='{self.agente}' evento='{self.evento}'>"
+
+
+class PostulacionDB(Base):
+    __tablename__ = "postulaciones"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_perfil = Column(Integer, ForeignKey("perfiles.id_perfil"), nullable=False, index=True)
+    id_vacante = Column(String, ForeignKey("vacantes.id_vacante"), nullable=False, index=True)
+    estado = Column(String, nullable=False, default="Enviada")
+    mensaje_confirmacion = Column(Text, nullable=True)
+    siguiente_paso = Column(Text, nullable=True)
+    run_id = Column(String, nullable=True)
+    fecha_postulacion = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "id_perfil": self.id_perfil,
+            "id_vacante": self.id_vacante,
+            "estado": self.estado,
+            "mensaje_confirmacion": self.mensaje_confirmacion,
+            "siguiente_paso": self.siguiente_paso,
+            "run_id": self.run_id,
+            "fecha_postulacion": self.fecha_postulacion.isoformat() if self.fecha_postulacion else None,
+        }
+
+    def __repr__(self):
+        return f"<PostulacionDB id={self.id} perfil={self.id_perfil} vacante='{self.id_vacante}' estado='{self.estado}'>"

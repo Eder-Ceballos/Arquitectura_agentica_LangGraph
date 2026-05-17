@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 
 interface BreakdownItem {
   habilidades: number;
@@ -59,6 +60,7 @@ const DARK = {
 };
 
 const RankingTable: React.FC<RankingTableProps> = ({ email, nombreCandidato, dark = false }) => {
+  const router = useRouter();
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +86,7 @@ const RankingTable: React.FC<RankingTableProps> = ({ email, nombreCandidato, dar
     <div style={{ marginTop: dark ? 0 : "2rem", paddingTop: dark ? 0 : "1.5rem", borderTop: dark ? "none" : `0.5px solid ${c.border}` }}>
       <div style={{ marginBottom: "1rem" }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: c.textPrimary, marginBottom: 4 }}>
-          Ranking de compatibilidad
+          Vacantes
         </h2>
         <p style={{ fontSize: 13, color: c.textSecondary }}>
           Vacantes ordenadas por compatibilidad con el perfil de{" "}
@@ -135,10 +137,15 @@ const RankingTable: React.FC<RankingTableProps> = ({ email, nombreCandidato, dar
               {ranking.map((v, i) => (
                 <tr
                   key={v.id_vacante}
+                  onClick={() => router.push(`/Vacantes/${v.id_vacante}`)}
                   style={{
                     borderBottom: `0.5px solid ${c.border}`,
                     background: i % 2 === 0 ? "transparent" : c.rowAlt,
+                    cursor: "pointer",
+                    transition: "background 0.15s",
                   }}
+                  onMouseEnter={e => (e.currentTarget.style.background = dark ? "rgba(99,102,241,0.08)" : "#f0f0ff")}
+                  onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? "transparent" : c.rowAlt)}
                 >
                   <td style={{ padding: "10px 12px", color: c.textTertiary, fontWeight: 500 }}>{i + 1}</td>
                   <td style={{ padding: "10px 12px", color: c.textPrimary, fontWeight: 500 }}>{v.cargo}</td>

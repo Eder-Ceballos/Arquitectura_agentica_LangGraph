@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import { useMagneto } from '../context/MagnetoContext'; 
+import { useMagneto } from '../context/MagnetoContext';
+import { useAuthGuard } from '../hooks/useAuthGuard'; 
 import { 
-  Mail, MapPin, Briefcase, ShieldCheck, Search, Edit3, Save, GraduationCap, 
-  AlertCircle, X, Terminal, Plus
+  Mail, MapPin, Briefcase, ShieldCheck, Search, Edit3, Save, GraduationCap,
+  AlertCircle, X, Terminal, Plus, DollarSign, Upload, CheckCircle2
 } from 'lucide-react';
 import DashboardPage from './DashboardPage';
-import RankingTable from '../components/RankingTable';
+import { FileUpload } from './FileUpload';
 
 const Profile = () => {
   const router = useRouter();
-  const { state } = useMagneto(); 
+  const { state, setState, logout } = useMagneto();
+  const isAuthenticated = useAuthGuard();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [newSkill, setNewSkill] = useState('');
   const [showLogs, setShowLogs] = useState(false);
+  const [showCvUpload, setShowCvUpload] = useState(false);
+  const [cvUploadSuccess, setCvUploadSuccess] = useState(false);
   
   const [editSections, setEditSections] = useState({
     header: false,
@@ -88,6 +92,8 @@ const Profile = () => {
     setProfile({ ...profile, habilidades: updatedSkills });
   };
 
+  if (!isAuthenticated) return null;
+
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center text-indigo-400 font-mono animate-pulse uppercase tracking-[0.3em] text-xs">
       Accediendo a database/app.db...
@@ -106,6 +112,14 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-300 p-4 md:p-8 font-sans">
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={() => { logout(); router.replace('/'); }}
+          className="text-slate-500 hover:text-white text-sm bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-800 transition-all hover:bg-slate-800"
+        >
+          Cerrar Sesión
+        </button>
+      </div>
       <div className="max-w-4xl mx-auto space-y-6">
         
         {/* --- HEADER SECTION --- */}
@@ -195,8 +209,21 @@ const Profile = () => {
             </div>
             
             <div className="space-y-3">
-              <button onClick={() => router.push('/Matching')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition-all active:scale-95">
-                <Search size={16}/> BUSCAR VACANTES
+              <button onClick={() => router.push('/Vacantes')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition-all active:scale-95">
+                <Search size={16}/> VACANTES DISPONIBLES
+              </button>
+              <button onClick={() => router.push('/Postulaciones')} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 py-4 rounded-2xl font-bold text-xs transition-all active:scale-95">
+                MIS POSTULACIONES
+              </button>
+              <button
+                onClick={() => { setShowCvUpload(v => !v); setCvUploadSuccess(false); }}
+                className={`w-full flex items-center justify-center gap-2 border py-4 rounded-2xl font-bold text-xs transition-all active:scale-95 ${
+                  showCvUpload
+                    ? 'bg-slate-800 border-indigo-500/50 text-indigo-400'
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                }`}
+              >
+                <Upload size={14} /> {showCvUpload ? 'CANCELAR' : 'CARGAR NUEVO CV'}
               </button>
               <button
                 onClick={() => setShowLogs(!showLogs)}
@@ -243,11 +270,11 @@ const Profile = () => {
                     <Briefcase size={12}/> Experiencia
                   </p>
                   {editSections.info ? (
-                    <input 
-                      type="number" 
-                      className="bg-slate-950 border-b border-indigo-500 text-white text-xs w-20 outline-none px-1" 
-                      value={profile?.años_experiencia ?? 0} 
-                      onChange={e => setProfile({...profile, años_experiencia: e.target.value})} 
+                    <input
+                      type="number"
+                      className="bg-slate-950 border-b border-indigo-500 text-white text-xs w-20 outline-none px-1"
+                      value={profile?.años_experiencia ?? 0}
+                      onChange={e => setProfile({...profile, años_experiencia: e.target.value})}
                     />
                   ) : (
                     <p className="text-white text-xs font-mono">{profile?.años_experiencia || 0} AÑOS</p>
@@ -258,13 +285,40 @@ const Profile = () => {
                     <GraduationCap size={12}/> Formación
                   </p>
                   {editSections.info ? (
-                    <input 
-                      className="bg-slate-950 border-b border-indigo-500 text-white text-xs w-full outline-none px-1" 
-                      value={profile?.profesion ?? ''} 
-                      onChange={e => setProfile({...profile, profesion: e.target.value})} 
+                    <input
+                      className="bg-slate-950 border-b border-indigo-500 text-white text-xs w-full outline-none px-1"
+                      value={profile?.profesion ?? ''}
+                      onChange={e => setProfile({...profile, profesion: e.target.value})}
                     />
                   ) : (
                     <p className="text-white text-xs font-mono truncate">{profile?.profesion || 'No especificada'}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1 col-span-2">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold flex items-center gap-2 tracking-tighter">
+                    <DollarSign size={12}/> Expectativa Salarial
+                  </p>
+                  {editSections.info ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500 text-xs font-mono">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100000"
+                        className="bg-slate-950 border-b border-indigo-500 text-white text-xs w-40 outline-none px-1"
+                        placeholder="ej: 5000000"
+                        value={profile?.salario ?? ''}
+                        onChange={e => setProfile({...profile, salario: parseFloat(e.target.value) || 0})}
+                      />
+                      <span className="text-slate-600 text-[10px] font-mono">COP / mes</span>
+                    </div>
+                  ) : (
+                    <p className="text-white text-xs font-mono">
+                      {profile?.salario
+                        ? `$ ${Number(profile.salario).toLocaleString('es-CO')} COP / mes`
+                        : 'No especificada'}
+                    </p>
                   )}
                 </div>
               </div>
@@ -272,14 +326,52 @@ const Profile = () => {
           </div>
         </div>
 
-        {/* --- RANKING DE COMPATIBILIDAD --- */}
-        {state?.perfil_normalizado?.email && (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 mt-2">
-            <RankingTable
-              email={state.perfil_normalizado.email}
-              nombreCandidato={profile?.nombre || state.perfil_normalizado.nombre || ""}
-              dark={true}
-            />
+        {/* --- CARGA DE NUEVO CV --- */}
+        {showCvUpload && (
+          <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 md:p-8">
+            <div className="flex items-center gap-2 mb-6">
+              <Upload size={14} className="text-indigo-400" />
+              <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                Actualizar CV
+              </h3>
+              <p className="ml-auto text-[10px] text-slate-600">
+                Los agentes extraerán la información y actualizarán tu perfil
+              </p>
+            </div>
+
+            {cvUploadSuccess ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <CheckCircle2 size={40} className="text-emerald-400" />
+                <p className="text-emerald-400 font-bold text-sm uppercase tracking-widest">
+                  CV actualizado correctamente
+                </p>
+                <p className="text-slate-500 text-xs">Tu perfil ha sido actualizado con los datos del nuevo CV.</p>
+                <button
+                  onClick={() => { setShowCvUpload(false); setCvUploadSuccess(false); }}
+                  className="mt-2 text-indigo-400 hover:text-indigo-300 text-xs font-bold uppercase tracking-widest transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            ) : (
+              <FileUpload
+                profileEmail={profile?.email}
+                onSuccess={(data) => {
+                  if (data?.perfil_normalizado) {
+                    const nuevo = {
+                      ...data.perfil_normalizado,
+                      id: data.perfil_normalizado.id ?? data.perfil_normalizado.id_perfil,
+                    };
+                    setProfile(prev => ({ ...prev, ...nuevo }));
+                    setState({ perfil_normalizado: nuevo, es_valido: true });
+                  }
+                  setCvUploadSuccess(true);
+                  setShowCvUpload(false);
+                  // Reload fresh data from DB
+                  fetchProfile();
+                }}
+              />
+            )}
           </div>
         )}
 
