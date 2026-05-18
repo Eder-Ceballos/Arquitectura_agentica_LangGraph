@@ -114,21 +114,21 @@ async def register(perfil_data: dict = Body(...)):
 
 @app.post("/api/v1/auth/login")
 async def login(credentials: LoginRequest):
-    """Verifica credenciales y devuelve un token JWT."""
+    """Verifica credenciales y devuelve un token JWT junto con el estado del CV."""
     db = SessionLocal()
     try:
-        # Buscar el perfil por email
         user = db.query(Perfil).filter(Perfil.email == credentials.email).first()
         
         if not user or not user.password_hash:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
         
-        # Verificar contraseña
         if not verify_password(credentials.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Contraseña incorrecta")
         
-        # Crear el token
         token = create_access_token({"sub": user.email})
+        
+        # DETERMINACIÓN INTELIGENTE: Si el cargo o descripción ya existen, es porque ya subió CV
+        has_cv = bool(user.cargo or user.descripcion)
         
         return {
             "access_token": token,
@@ -136,7 +136,8 @@ async def login(credentials: LoginRequest):
             "user": {
                 "email": user.email,
                 "nombre": user.nombre,
-                "id": user.id_perfil
+                "id": user.id_perfil,
+                "has_cv": has_cv  # <-- El Frontend usará esto para redirigir
             }
         }
     finally:
@@ -200,9 +201,8 @@ async def update_profile(email: str, data: ProfileUpdate):
 # --- ENDPOINTS DE PROCESAMIENTO ---
 
 @app.post("/api/v1/candidates/upload-cv")
-async def upload_cv(file: UploadFile = File(...)):
-    """Recibe, analiza mediante agentes y guarda el perfil en app.db si es válido."""
-    # Los CVs se guardan en backend/storage/cvs/
+async def upload_cv(file: UploadFile = File(...), email: Optional[str] = None):
+    """Recibe, analiza mediante agentes y vincula el perfil al usuario actual."""
     storage_path = os.path.join(BACKEND_DIR, "storage", "cvs")
     os.makedirs(storage_path, exist_ok=True)
     file_path = os.path.join(storage_path, file.filename)
@@ -215,18 +215,23 @@ async def upload_cv(file: UploadFile = File(...)):
         resultado_final = await app_graph.ainvoke(estado_inicial)
 
         if resultado_final.get("es_valido"):
-            save_candidate_to_db(resultado_final.get("perfil_normalizado"))
+            perfil_dict = resultado_final.get("perfil_normalizado") or {}
+            # Si el frontend nos mandó el email del usuario logueado, lo forzamos
+            if email:
+                perfil_dict["email"] = email
+            
+            save_candidate_to_db(perfil_dict)
 
         return {
             "status": "success",
             "perfil_normalizado": resultado_final.get("perfil_normalizado"),
             "es_valido": resultado_final.get("es_valido"),
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
-            "motivo_critico": resultado_final.get("motivo_critico")
+            "motivo_critico": resultado_final.get("motivo_critico"),
+            "has_cv": True # Le confirmamos al frontend que ya tiene CV exitoso
         }
     except Exception as e:
         return {"status": "error", "detalle": str(e)}
-
 @app.get("/api/v1/vacantes")
 def list_vacantes():
     db = SessionLocal()

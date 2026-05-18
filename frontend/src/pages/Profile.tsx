@@ -9,7 +9,7 @@ import DashboardPage from './DashboardPage';
 
 const Profile = () => {
   const router = useRouter();
-  const { state } = useMagneto(); 
+  const { state, logout } = useMagneto(); 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [newSkill, setNewSkill] = useState('');
@@ -104,7 +104,30 @@ const Profile = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-300 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-300 p-4 md:p-8 font-sans relative">
+      
+      {/* CONTENEDOR DE BOTONES DE CONTROL SUPERIOR */}
+      <div className="absolute top-4 right-4 z-50 flex gap-2">
+        {/* BOTÓN NUEVO: ACTUALIZAR CV */}
+        <button
+          onClick={() => router.push('/upload_cv')}
+          className="text-slate-500 hover:text-white text-sm bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-800 transition-all hover:bg-slate-800"
+        >
+          Actualizar CV
+        </button>
+
+        {/* BOTÓN EXISTENTE: CERRAR SESIÓN */}
+        <button
+          onClick={() => {
+            logout();
+            router.push('/');
+          }}
+          className="text-slate-500 hover:text-white text-sm bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-800 transition-all hover:bg-slate-800"
+        >
+          Cerrar Sesión
+        </button>
+      </div>
+
       <div className="max-w-4xl mx-auto space-y-6">
         
         {/* --- HEADER SECTION --- */}
