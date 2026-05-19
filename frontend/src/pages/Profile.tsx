@@ -23,7 +23,9 @@ const Profile = () => {
   });
 
   const fetchProfile = useCallback(async () => {
-    const emailToFetch = state?.perfil_normalizado?.email;
+    // CAMBIO CLAVE: Primero intentamos buscar el email del usuario logueado en el sistema
+    // Si no está ahí, miramos en perfil_normalizado como respaldo.
+    const emailToFetch = state?.user?.email || state?.perfil_normalizado?.email;
     
     if (!emailToFetch) {
       if (state?.perfil_normalizado) setProfile(state.perfil_normalizado);
@@ -36,7 +38,9 @@ const Profile = () => {
       const res = await fetch(`http://localhost:8000/api/v1/profile/${emailToFetch}`);
       if (res.ok) {
         const data = await res.json();
-        setProfile(data);
+        // Si el backend nos devuelve el perfil plano o envuelto en perfil_normalizado, lo controlamos:
+        const perfilFinal = data.perfil_normalizado || data;
+        setProfile(perfilFinal);
       } else {
         setProfile(state.perfil_normalizado);
       }
@@ -46,7 +50,7 @@ const Profile = () => {
     } finally {
       setLoading(false);
     }
-  }, [state?.perfil_normalizado]);
+  }, [state?.user, state?.perfil_normalizado]);
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
