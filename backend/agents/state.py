@@ -83,3 +83,4 @@ class AgentState(TypedDict):
     
     # TRAZABILIDAD (Se acumula con cada paso)
     history: Annotated[List[dict], operator.add]
+    run_id: str   # UUID generado por ejecución del grafo para correlacionar logs

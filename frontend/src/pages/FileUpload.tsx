@@ -4,12 +4,14 @@
 
 'use client';
 import React, { useState, useRef } from 'react';
+import { API_URL } from '../lib/api';
 
 interface FileUploadProps {
   onSuccess: (data: any) => void;
+  profileEmail?: string; // when set, forces the CV to update that specific profile
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onSuccess }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onSuccess, profileEmail }) => {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'analyzing' | 'done'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,8 +47,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onSuccess }) => {
       const formData = new FormData();
       formData.append('user_id', 'thomas-01');
       formData.append('file', file);
+      if (profileEmail) formData.append('profile_email', profileEmail);
 
-      const response = await fetch('http://localhost:8000/api/v1/candidates/upload-cv', {
+      const response = await fetch(`${API_URL}/api/v1/candidates/upload-cv`, {
         method: 'POST',
         body: formData,
       });

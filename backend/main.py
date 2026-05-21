@@ -1,12 +1,20 @@
 # main.py - API Backend para Magneto: Sistema de Agentes IA
-from fastapi import FastAPI, UploadFile, File, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Body, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import shutil
 import os
+import uuid
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import sys
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar UnicodeEncodeError en Windows (cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from auth_utils import hash_password, verify_password, create_access_token
 from sqlalchemy.orm import Session
 load_dotenv()
@@ -32,7 +40,19 @@ from database.database import engine, SessionLocal
 from database.models import Base, Perfil
 from database.init_db import load_static_vacancies
 from database.profile_repository import guardar_perfil
-from database.vacancy_repository import obtener_todas_las_vacantes
+from database.vacancy_repository import obtener_todas_las_vacantes, obtener_vacante_por_id
+from ranking import calcular_ranking
+from agents.postulation_graph import postulation_graph
+from database.postulacion_repository import obtener_postulaciones_por_perfil, cancelar_postulacion
+from database.models import PostulacionDB
+from database.log_repository import (
+    obtener_logs_por_run,
+    obtener_logs_recientes,
+    obtener_logs_por_agente,
+    obtener_estado_agentes,
+)
+from agents.logger import imprimir_historial
+from recommendations_cache import recs_cache
 
 # --- CAMBIO CLAVE: RUTA DE LA DB EN database/app.db ---
 # Esto asegura que sqlite3.connect use el mismo archivo que SQLAlchemy
@@ -84,6 +104,7 @@ class ProfileUpdate(BaseModel):
     ubicacion: Optional[str] = "No especificada"
     profesion: Optional[str] = "No especificada"
     años_experiencia: Optional[int] = 0
+    salario: Optional[float] = 0.0
 
 
 # --- ENDPOINTS DE AUTENTICACIÓN ---
@@ -127,16 +148,25 @@ async def login(credentials: LoginRequest):
         if not verify_password(credentials.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Contraseña incorrecta")
         
-        # Crear el token
         token = create_access_token({"sub": user.email})
-        
+
+        habilidades = [h.nombre for h in user.habilidades]
         return {
             "access_token": token,
             "token_type": "bearer",
             "user": {
+                "id": user.id_perfil,
+                "id_perfil": user.id_perfil,
                 "email": user.email,
                 "nombre": user.nombre,
-                "id": user.id_perfil
+                "cargo": user.cargo,
+                "profesion": user.profesion,
+                "descripcion": user.descripcion,
+                "años_experiencia": user.años_experiencia,
+                "ubicacion": user.ubicacion,
+                "salario": user.salario,
+                "habilidades": habilidades,
+                "es_valido": len(habilidades) > 0 or bool(user.profesion),
             }
         }
     finally:
@@ -188,7 +218,8 @@ async def update_profile(email: str, data: ProfileUpdate):
             "descripcion": data.descripcion,
             "ubicacion": data.ubicacion,
             "profesion": data.profesion,
-            "años_experiencia": data.años_experiencia
+            "años_experiencia": data.años_experiencia,
+            "salario": data.salario,
         }
         
         save_candidate_to_db(update_data)
@@ -200,32 +231,156 @@ async def update_profile(email: str, data: ProfileUpdate):
 # --- ENDPOINTS DE PROCESAMIENTO ---
 
 @app.post("/api/v1/candidates/upload-cv")
-async def upload_cv(file: UploadFile = File(...)):
-    """Recibe, analiza mediante agentes y guarda el perfil en app.db si es válido."""
-    # Los CVs se guardan en backend/storage/cvs/
+async def upload_cv(
+    file: UploadFile = File(...),
+    profile_email: Optional[str] = Form(None),
+):
+    """Recibe, analiza mediante agentes y guarda el perfil en la BD.
+
+    Flujo de persistencia (único punto de guardado):
+      1. profile_agent extrae el perfil del CV pero NO guarda en BD.
+      2. Si se recibe `profile_email` (usuario autenticado), se usa como email
+         del perfil ignorando el email que Gemini haya extraído del CV.
+         Esto garantiza que el CV siempre quede asociado a la cuenta correcta
+         y que nunca se creen perfiles duplicados.
+      3. Se guarda una única vez con el email definitivo.
+    """
     storage_path = os.path.join(BACKEND_DIR, "storage", "cvs")
     os.makedirs(storage_path, exist_ok=True)
     file_path = os.path.join(storage_path, file.filename)
-    
+
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
+        run_id = str(uuid.uuid4())
         estado_inicial = get_initial_state(file_path)
+        estado_inicial["run_id"] = run_id
         resultado_final = await app_graph.ainvoke(estado_inicial)
+        imprimir_historial(run_id, resultado_final.get("history", []))
 
-        if resultado_final.get("es_valido"):
-            save_candidate_to_db(resultado_final.get("perfil_normalizado"))
+        perfil_data = resultado_final.get("perfil_normalizado") or {}
+
+        # ── Override de email (paso 2 del flujo) ──────────────────────────────
+        # El email de la cuenta autenticada siempre tiene prioridad sobre
+        # cualquier email que Gemini haya extraído del CV.
+        if profile_email:
+            perfil_data["email"] = profile_email
+
+        # ── Único punto de guardado en BD (paso 3 del flujo) ──────────────────
+        # Se guarda tanto si es_valido=True como si es_valido=False pero hay
+        # un email válido, para vincular los datos parciales a la cuenta.
+        email = perfil_data.get("email")
+        if email:
+            save_candidate_to_db(perfil_data)
+            # Enriquecer respuesta con el id_perfil de la BD
+            db = SessionLocal()
+            try:
+                perfil_db = db.query(Perfil).filter(Perfil.email == email).first()
+                if perfil_db:
+                    perfil_data["id_perfil"] = perfil_db.id_perfil
+                    perfil_data["id"] = perfil_db.id_perfil
+            finally:
+                db.close()
+            recs_cache.invalidate_email(email)
 
         return {
             "status": "success",
-            "perfil_normalizado": resultado_final.get("perfil_normalizado"),
+            "run_id": run_id,
+            "perfil_normalizado": perfil_data,
             "es_valido": resultado_final.get("es_valido"),
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
-            "motivo_critico": resultado_final.get("motivo_critico")
+            "motivo_critico": resultado_final.get("motivo_critico"),
         }
     except Exception as e:
         return {"status": "error", "detalle": str(e)}
+
+@app.get("/api/v1/candidates/ranking")
+def get_ranking(email: str = Query(..., description="Email del candidato")):
+    """Devuelve las vacantes ordenadas por compatibilidad con el perfil del candidato."""
+    db = SessionLocal()
+    try:
+        perfil_orm = db.query(Perfil).filter(Perfil.email == email).first()
+        if not perfil_orm:
+            raise HTTPException(status_code=404, detail=f"Perfil con email '{email}' no encontrado")
+
+        perfil = {
+            "habilidades": [h.nombre for h in perfil_orm.habilidades],
+            "años_experiencia": perfil_orm.años_experiencia,
+            "salario": perfil_orm.salario,
+            "ubicacion": perfil_orm.ubicacion,
+        }
+
+        vacantes = obtener_todas_las_vacantes(db)
+        ranking = calcular_ranking(perfil, vacantes)
+        return {"status": "success", "candidato": perfil_orm.nombre, "ranking": ranking}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/candidates/recommendations")
+def get_recommendations(
+    email: str = Query(..., description="Email del candidato"),
+    limit: int = Query(default=7, ge=3, le=10),
+    refresh: bool = Query(default=False, description="Forzar regeneración ignorando caché"),
+):
+    """Devuelve las top vacantes recomendadas con razones generadas por IA.
+    Resultado cacheado en disco (JSON) por 5 minutos para evitar llamadas redundantes a Gemini.
+    El caché sobrevive reinicios del servidor y se invalida al re-subir CV."""
+    from agents.nodes.recommendation_agent import generar_razones_batch
+
+    cache_key = f"{email}:{limit}"
+    if not refresh:
+        cached = recs_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    db = SessionLocal()
+    try:
+        perfil_orm = db.query(Perfil).filter(Perfil.email == email).first()
+        if not perfil_orm:
+            raise HTTPException(status_code=404, detail=f"Perfil con email '{email}' no encontrado")
+
+        perfil = {
+            "nombre": perfil_orm.nombre,
+            "profesion": perfil_orm.profesion,
+            "años_experiencia": perfil_orm.años_experiencia,
+            "habilidades": [h.nombre for h in perfil_orm.habilidades],
+            "salario": perfil_orm.salario,
+            "ubicacion": perfil_orm.ubicacion,
+        }
+
+        vacantes = obtener_todas_las_vacantes(db)
+        ranking = calcular_ranking(perfil, vacantes)
+        top_n = ranking[:limit]
+    finally:
+        db.close()
+
+    run_id = str(uuid.uuid4())
+    razones = generar_razones_batch(perfil, top_n, run_id)
+
+    recommendations = [
+        {**item, "razon": razon or f"{item['score']}% de compatibilidad con tu perfil."}
+        for item, razon in zip(top_n, razones)
+    ]
+
+    result = {"status": "success", "recommendations": recommendations}
+    recs_cache.set(cache_key, result)
+    return result
+
+
+@app.get("/api/v1/vacantes/{id_vacante}")
+def get_vacante(id_vacante: str):
+    """Retorna el detalle completo de una vacante por su ID."""
+    db = SessionLocal()
+    try:
+        vacante = obtener_vacante_por_id(id_vacante, db)
+        if not vacante:
+            raise HTTPException(status_code=404, detail=f"Vacante '{id_vacante}' no encontrada")
+        return {"status": "success", "vacante": vacante.to_dict()}
+    finally:
+        db.close()
+
 
 @app.get("/api/v1/vacantes")
 def list_vacantes():
@@ -239,10 +394,12 @@ def list_vacantes():
 @app.post("/api/v1/candidates/revalidate")
 async def revalidate_candidate(corrected_data: dict = Body(...)):
     try:
+        run_id = str(uuid.uuid4())
         state_to_revalidate = {
             "perfil_normalizado": corrected_data,
             "es_valido": False,
-            "history": [{"agente": "frontend_form", "evento": "manual_correction"}]
+            "run_id": run_id,
+            "history": [{"agente": "frontend_form", "evento": "correccion_manual"}],
         }
 
         resultado_final = universal_validator_node(state_to_revalidate, target="profile")
@@ -252,14 +409,175 @@ async def revalidate_candidate(corrected_data: dict = Body(...)):
 
         return {
             "status": "success",
+            "run_id": run_id,
             "es_valido": resultado_final.get("es_valido"),
             "perfil_normalizado": corrected_data,
             "campos_a_corregir": resultado_final.get("campos_a_corregir"),
             "motivo_critico": resultado_final.get("motivo_critico"),
-            "historial": resultado_final.get("history")
+            "historial": resultado_final.get("history"),
         }
     except Exception as e:
         return {"status": "error", "detalle": str(e)}
+
+@app.get("/api/v1/agents/status")
+def get_agents_status():
+    """
+    Devuelve el estado actual de cada agente basado en sus logs más recientes.
+    Alimenta el polling del DashboardPage del frontend.
+    Los agentes sin actividad aún no aparecen (el frontend mantiene su estado mock).
+    """
+    db = SessionLocal()
+    try:
+        estado = obtener_estado_agentes(db)
+        return {
+            "agents": estado,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/logs")
+def list_logs(
+    limit: int = Query(default=50, ge=1, le=500),
+    agente: Optional[str] = Query(default=None, description="Filtrar por agente (ej: agente_perfil)"),
+):
+    """Retorna los logs más recientes, opcionalmente filtrados por agente."""
+    db = SessionLocal()
+    try:
+        if agente:
+            logs = obtener_logs_por_agente(agente, db, limit=limit)
+        else:
+            logs = obtener_logs_recientes(db, limit=limit)
+        return {"status": "success", "total": len(logs), "logs": [log.to_dict() for log in logs]}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/logs/{run_id}")
+def get_logs_by_run(run_id: str):
+    """Retorna todos los logs de una ejecución específica del grafo."""
+    db = SessionLocal()
+    try:
+        logs = obtener_logs_por_run(run_id, db)
+        if not logs:
+            raise HTTPException(status_code=404, detail=f"No se encontraron logs para run_id: {run_id}")
+        return {"status": "success", "run_id": run_id, "total": len(logs), "logs": [log.to_dict() for log in logs]}
+    finally:
+        db.close()
+
+
+class PostulacionRequest(BaseModel):
+    id_perfil: int
+    id_vacante: str
+
+
+@app.post("/api/v1/postulaciones")
+async def postular(req: PostulacionRequest):
+    """Activa el grafo de postulación: application_node → tracker_node."""
+    db = SessionLocal()
+    try:
+        perfil_orm = db.query(Perfil).filter(Perfil.id_perfil == req.id_perfil).first()
+        if not perfil_orm:
+            raise HTTPException(status_code=404, detail="Perfil no encontrado")
+
+        vacante_orm = obtener_vacante_por_id(req.id_vacante, db)
+        if not vacante_orm:
+            raise HTTPException(status_code=404, detail="Vacante no encontrada")
+
+        perfil = {
+            "nombre": perfil_orm.nombre,
+            "profesion": perfil_orm.profesion,
+            "años_experiencia": perfil_orm.años_experiencia,
+            "habilidades": [h.nombre for h in perfil_orm.habilidades],
+            "cargo": perfil_orm.cargo,
+            "ubicacion": perfil_orm.ubicacion,
+            "salario": perfil_orm.salario,
+        }
+        vacante = vacante_orm.to_dict()
+
+        vacantes_all = obtener_todas_las_vacantes(db)
+        ranking = calcular_ranking(perfil, vacantes_all)
+        entrada_ranking = next((v for v in ranking if v["id_vacante"] == req.id_vacante), {})
+        score = entrada_ranking.get("score", 0)
+        habilidades_match = entrada_ranking.get("breakdown", {}).get("habilidades_match", [])
+
+    finally:
+        db.close()
+
+    run_id = str(uuid.uuid4())
+    estado_inicial = {
+        "run_id": run_id,
+        "id_perfil": req.id_perfil,
+        "id_vacante": req.id_vacante,
+        "perfil": perfil,
+        "vacante": vacante,
+        "score": score,
+        "habilidades_match": habilidades_match,
+        "postulacion_id": None,
+        "estado": "",
+        "mensaje_confirmacion": "",
+        "siguiente_paso": "",
+        "error": None,
+        "history": [],
+    }
+
+    try:
+        resultado = await postulation_graph.ainvoke(estado_inicial)
+        return {
+            "status": "success",
+            "run_id": run_id,
+            "postulacion_id": resultado.get("postulacion_id"),
+            "estado": resultado.get("estado"),
+            "mensaje_confirmacion": resultado.get("mensaje_confirmacion"),
+            "siguiente_paso": resultado.get("siguiente_paso"),
+            "error": resultado.get("error"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/postulaciones/{id_postulacion}")
+def delete_postulacion(
+    id_postulacion: int,
+    id_perfil: int = Query(..., description="ID del perfil propietario — verifica pertenencia"),
+):
+    """Cancela (elimina) una postulación del candidato.
+    Requiere id_perfil para garantizar que solo el dueño pueda cancelarla."""
+    db = SessionLocal()
+    try:
+        eliminada = cancelar_postulacion(id_postulacion, id_perfil, db)
+        if not eliminada:
+            raise HTTPException(
+                status_code=404,
+                detail="Postulación no encontrada o no pertenece a este perfil",
+            )
+        return {"status": "success", "message": "Postulación cancelada correctamente"}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/postulaciones/{id_perfil}")
+def get_postulaciones(id_perfil: int):
+    """Retorna todas las postulaciones de un candidato enriquecidas con datos de la vacante."""
+    db = SessionLocal()
+    try:
+        postulaciones = obtener_postulaciones_por_perfil(id_perfil, db)
+        resultado = []
+        for p in postulaciones:
+            data = p.to_dict()
+            vacante = obtener_vacante_por_id(p.id_vacante, db)
+            data["vacante"] = {
+                "cargo": vacante.cargo,
+                "empresa": vacante.empresa,
+                "modalidad": vacante.modalidad,
+                "ubicacion": vacante.ubicacion,
+            } if vacante else {}
+            resultado.append(data)
+        return {"status": "success", "postulaciones": resultado}
+    finally:
+        db.close()
+
 
 @app.get("/")
 def root():

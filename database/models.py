@@ -95,3 +95,61 @@ class Vacante(Base):
 
     def __repr__(self):
         return f"<Vacante id_vacante={self.id_vacante} cargo='{self.cargo}'>"
+
+
+class AgentLog(Base):
+    __tablename__ = "agent_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String, nullable=False, index=True)
+    agente = Column(String, nullable=False, index=True)  # ej: "agente_perfil", "agente_recomendaciones"
+    evento = Column(String, nullable=False)              # ej: "extraccion_iniciada", "validacion_completada"
+    nivel = Column(String, nullable=False, default="INFO")
+    mensaje = Column(Text, nullable=True)
+    detalle = Column(Text, nullable=True)                # JSON serializado con contexto adicional
+    duracion_ms = Column(Integer, nullable=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "agente": self.agente,
+            "evento": self.evento,
+            "nivel": self.nivel,
+            "mensaje": self.mensaje,
+            "detalle": self.detalle,
+            "duracion_ms": self.duracion_ms,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+    def __repr__(self):
+        return f"<AgentLog run_id={self.run_id} agente='{self.agente}' evento='{self.evento}'>"
+
+
+class PostulacionDB(Base):
+    __tablename__ = "postulaciones"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_perfil = Column(Integer, ForeignKey("perfiles.id_perfil"), nullable=False, index=True)
+    id_vacante = Column(String, ForeignKey("vacantes.id_vacante"), nullable=False, index=True)
+    estado = Column(String, nullable=False, default="Enviada")
+    mensaje_confirmacion = Column(Text, nullable=True)
+    siguiente_paso = Column(Text, nullable=True)
+    run_id = Column(String, nullable=True)
+    fecha_postulacion = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "id_perfil": self.id_perfil,
+            "id_vacante": self.id_vacante,
+            "estado": self.estado,
+            "mensaje_confirmacion": self.mensaje_confirmacion,
+            "siguiente_paso": self.siguiente_paso,
+            "run_id": self.run_id,
+            "fecha_postulacion": self.fecha_postulacion.isoformat() if self.fecha_postulacion else None,
+        }
+
+    def __repr__(self):
+        return f"<PostulacionDB id={self.id} perfil={self.id_perfil} vacante='{self.id_vacante}' estado='{self.estado}'>"

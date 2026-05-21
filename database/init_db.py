@@ -21,10 +21,10 @@ def init_db():
 
 def load_static_vacancies():
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    vacancies_file = os.path.join(root_dir, "Vacantes")
+    vacancies_file = os.path.join(root_dir, "Vacantes.json")
 
     if not os.path.exists(vacancies_file):
-        print(f"⚠️ Archivo de vacantes no encontrado: {vacancies_file}")
+        print(f"⚠️  Archivo de vacantes no encontrado: {vacancies_file}")
         return
 
     with open(vacancies_file, encoding="utf-8") as file:

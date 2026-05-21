@@ -1,6 +1,36 @@
-import React from "react";
-import type { AgentMeta } from "../types/agents";
+import React, { useEffect, useState } from "react";
+import type { AgentId, AgentMeta } from "../types/agents";
 import { StatusBadge, JsonChip } from "./AgentCard";
+import { useMagneto } from "../context/MagnetoContext";
+import { API_URL } from "../lib/api";
+
+// Mismo mapeo que en DashboardPage: AgentId → nombre del agente en BD
+const FRONTEND_TO_BACKEND: Partial<Record<AgentId, string>> = {
+  profile_agent: "agente_perfil",
+  validador_candidato: "agente_validador",
+  advisor_agent: "agente_recomendaciones",
+  application_agent: "agente_postulaciones",
+  tracker_agent: "agente_seguimiento",
+};
+
+interface AgentLogEntry {
+  id: number;
+  run_id: string;
+  agente: string;
+  evento: string;
+  nivel: string;
+  mensaje: string | null;
+  detalle: string | null;
+  duracion_ms: number | null;
+  timestamp: string;
+}
+
+const NIVEL_COLOR: Record<string, string> = {
+  INFO: "#1D9E75",
+  WARNING: "#BA7517",
+  ERROR: "#E24B4A",
+  DEBUG: "#888780",
+};
 
 interface DetailPanelProps {
   agent: AgentMeta;
@@ -8,6 +38,28 @@ interface DetailPanelProps {
 }
 
 const DetailPanel: React.FC<DetailPanelProps> = ({ agent, onClose }) => {
+  const { state } = useMagneto();
+  const [logs, setLogs] = useState<AgentLogEntry[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  const backendAgente = FRONTEND_TO_BACKEND[agent.id];
+
+  useEffect(() => {
+    if (!state.run_id || !backendAgente) return;
+
+    setLoadingLogs(true);
+    fetch(`${API_URL}/api/v1/logs/${state.run_id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const filtrados: AgentLogEntry[] = (data.logs ?? []).filter(
+          (l: AgentLogEntry) => l.agente === backendAgente
+        );
+        setLogs(filtrados);
+      })
+      .catch(() => setLogs([]))
+      .finally(() => setLoadingLogs(false));
+  }, [state.run_id, backendAgente]);
+
   return (
     <div
       style={{
@@ -113,21 +165,95 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ agent, onClose }) => {
         </div>
       </div>
 
-      {/* Nota futura */}
+      {/* Historial de logs */}
       <div
         style={{
           marginTop: "1rem",
           paddingTop: "1rem",
           borderTop: "0.5px solid var(--color-border-tertiary)",
-          fontSize: 12,
-          color: "var(--color-text-tertiary)",
         }}
       >
-        Los datos en vivo vendrán de{" "}
-        <code style={{ fontFamily: "monospace", background: "var(--color-background-secondary)", padding: "1px 6px", borderRadius: 4 }}>
-          GET /api/agents/status
-        </code>{" "}
-        cuando el backend esté activo.
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            fontWeight: 500,
+            marginBottom: 10,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Historial de ejecución
+          {state.run_id && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontFamily: "monospace",
+                fontWeight: 400,
+                background: "var(--color-background-secondary)",
+                padding: "1px 6px",
+                borderRadius: 4,
+                fontSize: 10,
+              }}
+            >
+              {state.run_id.slice(0, 8)}…
+            </span>
+          )}
+        </div>
+
+        {!state.run_id && (
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            Sin ejecución activa. Sube un CV para ver el historial.
+          </p>
+        )}
+
+        {state.run_id && !backendAgente && (
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            Este agente aún no registra logs.
+          </p>
+        )}
+
+        {state.run_id && backendAgente && loadingLogs && (
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Cargando…</p>
+        )}
+
+        {state.run_id && backendAgente && !loadingLogs && logs.length === 0 && (
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            Sin eventos registrados para esta ejecución.
+          </p>
+        )}
+
+        {logs.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {logs.map((log) => (
+              <div
+                key={log.id}
+                style={{
+                  background: "var(--color-background-secondary)",
+                  borderRadius: 8,
+                  padding: "0.6rem 0.75rem",
+                  borderLeft: `3px solid ${NIVEL_COLOR[log.nivel] ?? "#888780"}`,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: NIVEL_COLOR[log.nivel] ?? "#888780" }}>
+                    {log.evento}
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>
+                    {log.duracion_ms != null ? `${log.duracion_ms}ms` : ""}
+                    {" "}
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                {log.mensaje && (
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: 0 }}>
+                    {log.mensaje}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

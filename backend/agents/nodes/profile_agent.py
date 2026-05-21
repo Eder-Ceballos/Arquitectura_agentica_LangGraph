@@ -1,9 +1,11 @@
+import json
 import os
 import sys
+import time
 from pathlib import Path
-from click import prompt
-from langchain_google_genai import ChatGoogleGenerativeAI
-from agents.state import AgentState, PerfilNormalizado
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
+from agents.state import AgentState
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -11,19 +13,16 @@ for path in [str(ROOT_DIR), str(BACKEND_DIR)]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from database.database import SessionLocal
-from database.profile_repository import guardar_perfil
+from agents.logger import log_agent_action
 from dotenv import load_dotenv
 
 load_dotenv()
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview",   # Modelo original de thomas, sí existe
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=os.getenv("GROQ_API_KEY"),
     temperature=0
 )
-
-structured_llm = llm.with_structured_output(PerfilNormalizado)
 
 PLACEHOLDER_VALUES = {
     "-", "--", "n/a", "na", "none", "sin datos", "no aplica", "desconocido",
@@ -107,59 +106,111 @@ def _has_meaningful_profile(perfil):
     ) or bool(perfil.get("habilidades"))
 
 
-def profile_node(state: AgentState):
-    print("[Agente de Perfil] Analizando texto del CV ...")
+AGENTE = "agente_perfil"
 
+
+def profile_node(state: AgentState):
+    run_id = state.get("run_id", "sin-run-id")
     texto_cv = state.get("pdf_file", "")
 
-    prompt = f"""
-    Actúa como un experto en reclutamiento IT. 
-    Analiza el siguiente texto extraído de un currículum y organiza la información 
-    siguiendo estrictamente el esquema proporcionado.
-    
-    TEXTO DEL CV:
-    {texto_cv}
-    """
+    log_agent_action(
+        run_id=run_id,
+        agente=AGENTE,
+        evento="extraccion_iniciada",
+        mensaje="Analizando texto del CV con Gemini.",
+    )
 
+    extraction_prompt = f"""
+Actúa como un experto en reclutamiento IT.
+Analiza el siguiente texto extraído de un currículum y extrae la información del candidato.
+
+Responde ESTRICTAMENTE en formato JSON con exactamente estos campos:
+{{
+    "nombre": "nombre completo del candidato",
+    "telefono": "número de teléfono",
+    "email": "correo electrónico",
+    "profesion": "profesión o título profesional",
+    "descripcion": "resumen profesional o descripción",
+    "habilidades": ["habilidad1", "habilidad2", "..."],
+    "años_experiencia": 0,
+    "sectores": "sectores o industrias donde ha trabajado",
+    "cargo": "último o principal cargo desempeñado",
+    "salario": 0.0,
+    "educativo": "nivel educativo más alto alcanzado",
+    "disponibilidad": "disponibilidad para trabajar (inmediata, 1 mes, etc.)",
+    "discapacidades": "discapacidades si aplica, o vacío",
+    "ubicacion": "ciudad y/o país de residencia"
+}}
+
+Si algún campo no está disponible en el CV, usa cadena vacía "" para strings, 0 para números y [] para listas.
+NO incluyas texto adicional fuera del JSON.
+
+TEXTO DEL CV:
+{texto_cv}
+"""
+
+    t0 = time.time()
     try:
-        resultado_raw = structured_llm.invoke(prompt)
-        resultado_final = _normalize_profile_data(resultado_raw)
+        response = llm.invoke([HumanMessage(content=extraction_prompt)])
 
-        print("✅ [DEBUG] Perfil extraído y normalizado:")
-        print(resultado_final)
-
-        if _has_meaningful_profile(resultado_final):
-            db = SessionLocal()
-            try:
-                guardar_perfil(resultado_final, db)
-            finally:
-                db.close()
-            history = [{
-                "agente": "perfil",
-                "evento": "extracción_completada",
-                "mensaje": f"Perfil de {resultado_final.get('nombre', 'Desconocido')} extraído y guardado en BD."
-            }]
+        # Extraer el contenido de texto de la respuesta
+        if isinstance(response.content, list):
+            text = str(response.content[0].get("text", response.content[0]))
         else:
-            print("⚠️ Perfil sin datos significativos: no se guarda en BD.")
-            history = [{
-                "agente": "perfil",
-                "evento": "extracción_incompleta",
-                "mensaje": "El CV no contenía datos significativos y no se persistió."
-            }]
+            text = str(response.content)
+
+        # Parsear JSON manualmente (robusto ante texto extra antes/después del JSON)
+        start_idx = text.find('{')
+        end_idx = text.rfind('}') + 1
+        if start_idx == -1 or end_idx == 0:
+            raise ValueError(f"No se encontró JSON válido en la respuesta del modelo. Respuesta: {text[:200]}")
+
+        raw_data = json.loads(text[start_idx:end_idx])
+        resultado_final = _normalize_profile_data(raw_data)
+        duracion = int((time.time() - t0) * 1000)
+
+        # La persistencia en BD es responsabilidad exclusiva de main.py,
+        # que aplica el override del email autenticado ANTES de guardar.
+        # El agente solo normaliza y devuelve el perfil al estado del grafo.
+        if _has_meaningful_profile(resultado_final):
+            log_agent_action(
+                run_id=run_id,
+                agente=AGENTE,
+                evento="extraccion_completada",
+                mensaje=f"Perfil de '{resultado_final.get('nombre', 'Desconocido')}' extraído correctamente. Pendiente de persistencia en main.",
+                duracion_ms=duracion,
+                detalle={"nombre": resultado_final.get("nombre"), "email": resultado_final.get("email")},
+            )
+            history = [{"agente": AGENTE, "evento": "extraccion_completada"}]
+        else:
+            log_agent_action(
+                run_id=run_id,
+                agente=AGENTE,
+                evento="extraccion_incompleta",
+                mensaje="El CV no contenía datos significativos.",
+                nivel="WARNING",
+                duracion_ms=duracion,
+            )
+            history = [{"agente": AGENTE, "evento": "extraccion_incompleta"}]
 
         return {
             "perfil_normalizado": resultado_final,
-            "status_db": "sync" if _has_meaningful_profile(resultado_final) else "pending",
-            "history": history
+            "status_db": "pending",   # main.py actualiza a "sync" al guardar
+            "history": history,
         }
 
     except Exception as e:
-        print(f"❌ Error durante la llamada a Gemini: {e}")
+        duracion = int((time.time() - t0) * 1000)
+        log_agent_action(
+            run_id=run_id,
+            agente=AGENTE,
+            evento="error_extraccion",
+            mensaje=f"Error durante la llamada a Gemini: {e}",
+            nivel="ERROR",
+            duracion_ms=duracion,
+            detalle={"error": str(e)},
+        )
         return {
             "status_db": "error",
-            "history": [{
-                "agente": "perfil",
-                "evento": "error_ia",
-                "detalle": str(e)
-            }]
+            "history": [{"agente": AGENTE, "evento": "error_extraccion", "detalle": str(e)}],
         }
