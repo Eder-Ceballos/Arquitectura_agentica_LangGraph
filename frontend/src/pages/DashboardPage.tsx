@@ -6,11 +6,13 @@ import FlowBar from "../components/FlowBar";
 import DetailPanel from "../components/DetailPanel";
 import RankingTable from "../components/RankingTable";
 import { useMagneto } from "../context/MagnetoContext";
+import { API_URL } from "../lib/api";
 
 // Mapeo: nombre del agente en BD → AgentIds del frontend que representa.
 // Cuando se implemente un nuevo agente en el backend, agregar su entrada aquí.
 const BACKEND_TO_FRONTEND: Record<string, AgentId[]> = {
-  agente_perfil: ["profile_agent", "validador_candidato"],
+  agente_perfil:      ["profile_agent"],
+  agente_validador:   ["validador_candidato"],
   agente_recomendaciones: ["advisor_agent"],
   agente_postulaciones: ["application_agent"],
   agente_seguimiento: ["tracker_agent"],
@@ -23,7 +25,7 @@ function useAgentsStatus(intervalMs = 10000) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/agents/status");
+      const res = await fetch(`${API_URL}/api/v1/agents/status`);
       if (!res.ok) throw new Error("Error al obtener estado de agentes");
       const data = await res.json();
 

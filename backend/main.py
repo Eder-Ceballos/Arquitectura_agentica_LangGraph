@@ -9,6 +9,12 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 import sys
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar UnicodeEncodeError en Windows (cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from auth_utils import hash_password, verify_password, create_access_token
 from sqlalchemy.orm import Session
 load_dotenv()
@@ -37,7 +43,7 @@ from database.profile_repository import guardar_perfil
 from database.vacancy_repository import obtener_todas_las_vacantes, obtener_vacante_por_id
 from ranking import calcular_ranking
 from agents.postulation_graph import postulation_graph
-from database.postulacion_repository import obtener_postulaciones_por_perfil
+from database.postulacion_repository import obtener_postulaciones_por_perfil, cancelar_postulacion
 from database.models import PostulacionDB
 from database.log_repository import (
     obtener_logs_por_run,
@@ -46,10 +52,7 @@ from database.log_repository import (
     obtener_estado_agentes,
 )
 from agents.logger import imprimir_historial
-
-# In-memory cache for recommendations { email: (timestamp, payload) }
-_recommendations_cache: dict = {}
-_RECOMMENDATIONS_TTL = 300  # 5 minutes
+from recommendations_cache import recs_cache
 
 # --- CAMBIO CLAVE: RUTA DE LA DB EN database/app.db ---
 # Esto asegura que sqlite3.connect use el mismo archivo que SQLAlchemy
@@ -232,9 +235,16 @@ async def upload_cv(
     file: UploadFile = File(...),
     profile_email: Optional[str] = Form(None),
 ):
-    """Recibe, analiza mediante agentes y guarda el perfil en app.db si es válido.
-    Si profile_email se provee (re-subida desde perfil), el CV actualiza ese perfil
-    específico independientemente del email que Gemini extraiga del documento."""
+    """Recibe, analiza mediante agentes y guarda el perfil en la BD.
+
+    Flujo de persistencia (único punto de guardado):
+      1. profile_agent extrae el perfil del CV pero NO guarda en BD.
+      2. Si se recibe `profile_email` (usuario autenticado), se usa como email
+         del perfil ignorando el email que Gemini haya extraído del CV.
+         Esto garantiza que el CV siempre quede asociado a la cuenta correcta
+         y que nunca se creen perfiles duplicados.
+      3. Se guarda una única vez con el email definitivo.
+    """
     storage_path = os.path.join(BACKEND_DIR, "storage", "cvs")
     os.makedirs(storage_path, exist_ok=True)
     file_path = os.path.join(storage_path, file.filename)
@@ -251,16 +261,19 @@ async def upload_cv(
 
         perfil_data = resultado_final.get("perfil_normalizado") or {}
 
-        # When re-uploading from the profile page, override the email so the
-        # extracted data always lands on the authenticated user's profile.
+        # ── Override de email (paso 2 del flujo) ──────────────────────────────
+        # El email de la cuenta autenticada siempre tiene prioridad sobre
+        # cualquier email que Gemini haya extraído del CV.
         if profile_email:
             perfil_data["email"] = profile_email
 
-        if resultado_final.get("es_valido"):
-            save_candidate_to_db(perfil_data)
-
-        email = perfil_data.get("email") or profile_email
+        # ── Único punto de guardado en BD (paso 3 del flujo) ──────────────────
+        # Se guarda tanto si es_valido=True como si es_valido=False pero hay
+        # un email válido, para vincular los datos parciales a la cuenta.
+        email = perfil_data.get("email")
         if email:
+            save_candidate_to_db(perfil_data)
+            # Enriquecer respuesta con el id_perfil de la BD
             db = SessionLocal()
             try:
                 perfil_db = db.query(Perfil).filter(Perfil.email == email).first()
@@ -269,9 +282,7 @@ async def upload_cv(
                     perfil_data["id"] = perfil_db.id_perfil
             finally:
                 db.close()
-            for key in list(_recommendations_cache.keys()):
-                if key.startswith(f"{email}:"):
-                    del _recommendations_cache[key]
+            recs_cache.invalidate_email(email)
 
         return {
             "status": "success",
@@ -314,15 +325,15 @@ def get_recommendations(
     refresh: bool = Query(default=False, description="Forzar regeneración ignorando caché"),
 ):
     """Devuelve las top vacantes recomendadas con razones generadas por IA.
-    Resultado cacheado en memoria por 5 minutos para evitar llamadas redundantes a Gemini."""
-    import time as _time
+    Resultado cacheado en disco (JSON) por 5 minutos para evitar llamadas redundantes a Gemini.
+    El caché sobrevive reinicios del servidor y se invalida al re-subir CV."""
     from agents.nodes.recommendation_agent import generar_razones_batch
 
     cache_key = f"{email}:{limit}"
     if not refresh:
-        cached = _recommendations_cache.get(cache_key)
-        if cached and (_time.time() - cached[0]) < _RECOMMENDATIONS_TTL:
-            return cached[1]
+        cached = recs_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     db = SessionLocal()
     try:
@@ -354,7 +365,7 @@ def get_recommendations(
     ]
 
     result = {"status": "success", "recommendations": recommendations}
-    _recommendations_cache[cache_key] = (_time.time(), result)
+    recs_cache.set(cache_key, result)
     return result
 
 
@@ -524,6 +535,26 @@ async def postular(req: PostulacionRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/postulaciones/{id_postulacion}")
+def delete_postulacion(
+    id_postulacion: int,
+    id_perfil: int = Query(..., description="ID del perfil propietario — verifica pertenencia"),
+):
+    """Cancela (elimina) una postulación del candidato.
+    Requiere id_perfil para garantizar que solo el dueño pueda cancelarla."""
+    db = SessionLocal()
+    try:
+        eliminada = cancelar_postulacion(id_postulacion, id_perfil, db)
+        if not eliminada:
+            raise HTTPException(
+                status_code=404,
+                detail="Postulación no encontrada o no pertenece a este perfil",
+            )
+        return {"status": "success", "message": "Postulación cancelada correctamente"}
+    finally:
+        db.close()
 
 
 @app.get("/api/v1/postulaciones/{id_perfil}")

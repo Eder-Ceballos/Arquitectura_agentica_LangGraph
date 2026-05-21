@@ -52,6 +52,7 @@ export default function Home() {
       </div>
 
       <FileUpload
+        profileEmail={state?.perfil_normalizado?.email ?? undefined}
         onSuccess={(data) => {
           setState(data);
           if (data.es_valido === true) {

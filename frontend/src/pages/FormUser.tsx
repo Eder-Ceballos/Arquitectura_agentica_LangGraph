@@ -2,11 +2,13 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useMagneto } from '../context/MagnetoContext';
+import { useAuthGuard } from '../hooks/useAuthGuard';
 import Form from '../components/Form';
 
 const FormUser = () => {
   const { state, setState } = useMagneto();
   const router = useRouter();
+  const isAuthenticated = useAuthGuard();
 
   useEffect(() => {
     if (!state?.perfil_normalizado) {
@@ -26,6 +28,8 @@ const FormUser = () => {
     });
     router.push('/Profile');
   };
+
+  if (!isAuthenticated) return null;
 
   if (!state?.perfil_normalizado) {
     return (

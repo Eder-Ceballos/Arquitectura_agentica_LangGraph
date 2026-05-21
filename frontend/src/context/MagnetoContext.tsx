@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_URL } from '../lib/api';
 
 // Integramos login nuevo
 interface MagnetoState {
@@ -58,7 +59,7 @@ export const MagnetoProvider = ({ children }: { children: React.ReactNode }) => 
     // Fetch fresh profile in background to pick up any DB changes
     const email = parsedProfile?.email;
     if (email) {
-      fetch(`http://localhost:8000/api/v1/profile/${encodeURIComponent(email)}`)
+      fetch(`${API_URL}/api/v1/profile/${encodeURIComponent(email)}`)
         .then(r => (r.ok ? r.json() : null))
         .then(data => {
           if (!data) return;

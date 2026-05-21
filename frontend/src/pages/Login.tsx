@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useMagneto } from '../context/MagnetoContext';
+import { API_URL } from '../lib/api';
 
 export const Login = () => {
   const router = useRouter();
@@ -19,8 +20,8 @@ export const Login = () => {
     setLoading(true);
 
     const endpoint = isRegistering
-      ? 'http://localhost:8000/api/v1/auth/register'
-      : 'http://localhost:8000/api/v1/auth/login';
+      ? `${API_URL}/api/v1/auth/register`
+      : `${API_URL}/api/v1/auth/login`;
 
     const payload = isRegistering
       ? { email, password, nombre }

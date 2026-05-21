@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Mail, Briefcase, MapPin, Code, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { API_URL } from '../lib/api';
 
 const Form = ({ state, onUpdate }: { state: any; onUpdate: (data: any) => void }) => {
   const {
@@ -55,7 +56,7 @@ const Form = ({ state, onUpdate }: { state: any; onUpdate: (data: any) => void }
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://localhost:8000/api/v1/candidates/revalidate', {
+      const response = await fetch(`${API_URL}/api/v1/candidates/revalidate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

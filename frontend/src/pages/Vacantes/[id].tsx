@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useMagneto } from '../../context/MagnetoContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
+import { API_URL } from '../../lib/api';
 import {
   ArrowLeft, MapPin, Briefcase, Building2,
   GraduationCap, DollarSign, CheckCircle, Send
@@ -73,12 +74,12 @@ const VacanteDetallePage = () => {
   useEffect(() => {
     if (!id) return;
 
-    const fetchVacante = fetch(`http://localhost:8000/api/v1/vacantes/${id}`)
+    const fetchVacante = fetch(`${API_URL}/api/v1/vacantes/${id}`)
       .then(r => r.json())
       .then(d => setVacante(d.vacante));
 
     const fetchScore = email
-      ? fetch(`http://localhost:8000/api/v1/candidates/ranking?email=${encodeURIComponent(email)}`)
+      ? fetch(`${API_URL}/api/v1/candidates/ranking?email=${encodeURIComponent(email)}`)
           .then(r => r.json())
           .then(d => {
             const entrada = (d.ranking ?? []).find((v: any) => v.id_vacante === id);
@@ -87,7 +88,7 @@ const VacanteDetallePage = () => {
       : Promise.resolve();
 
     const fetchPostulacion = idPerfil
-      ? fetch(`http://localhost:8000/api/v1/postulaciones/${idPerfil}`)
+      ? fetch(`${API_URL}/api/v1/postulaciones/${idPerfil}`)
           .then(r => r.json())
           .then(d => {
             const existente = (d.postulaciones ?? []).find((p: any) => p.id_vacante === id);
@@ -102,7 +103,7 @@ const VacanteDetallePage = () => {
     if (!idPerfil || !id) return;
     setPostulando(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/postulaciones', {
+      const res = await fetch(`${API_URL}/api/v1/postulaciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_perfil: idPerfil, id_vacante: id }),

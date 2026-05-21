@@ -3,7 +3,7 @@ import os
 import time
 from typing import Dict, Any
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from agents.state import AgentState
 from agents.logger import log_agent_action
@@ -12,13 +12,13 @@ from agents.logger import log_agent_action
 load_dotenv()
 
 # Instanciar el modelo Gemini
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview", 
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0 
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0
 )
 
-AGENTE = "agente_perfil"
+AGENTE = "agente_validador"
 
 
 def universal_validator_node(state: AgentState, target: str = "profile") -> Dict[str, Any]:

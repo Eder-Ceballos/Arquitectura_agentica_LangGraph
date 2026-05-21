@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { API_URL } from "../lib/api";
 
 interface BreakdownItem {
   habilidades: number;
@@ -72,7 +73,7 @@ const RankingTable: React.FC<RankingTableProps> = ({ email, nombreCandidato, dar
     setLoading(true);
     setError(null);
 
-    fetch(`http://localhost:8000/api/v1/candidates/ranking?email=${encodeURIComponent(email)}`)
+    fetch(`${API_URL}/api/v1/candidates/ranking?email=${encodeURIComponent(email)}`)
       .then((r) => {
         if (!r.ok) throw new Error("No se pudo obtener el ranking");
         return r.json();

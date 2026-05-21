@@ -2,11 +2,12 @@ import React, { useEffect, useState } from "react";
 import type { AgentId, AgentMeta } from "../types/agents";
 import { StatusBadge, JsonChip } from "./AgentCard";
 import { useMagneto } from "../context/MagnetoContext";
+import { API_URL } from "../lib/api";
 
 // Mismo mapeo que en DashboardPage: AgentId → nombre del agente en BD
 const FRONTEND_TO_BACKEND: Partial<Record<AgentId, string>> = {
   profile_agent: "agente_perfil",
-  validador_candidato: "agente_perfil",
+  validador_candidato: "agente_validador",
   advisor_agent: "agente_recomendaciones",
   application_agent: "agente_postulaciones",
   tracker_agent: "agente_seguimiento",
@@ -47,7 +48,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ agent, onClose }) => {
     if (!state.run_id || !backendAgente) return;
 
     setLoadingLogs(true);
-    fetch(`http://localhost:8000/api/v1/logs/${state.run_id}`)
+    fetch(`${API_URL}/api/v1/logs/${state.run_id}`)
       .then((r) => r.json())
       .then((data) => {
         const filtrados: AgentLogEntry[] = (data.logs ?? []).filter(

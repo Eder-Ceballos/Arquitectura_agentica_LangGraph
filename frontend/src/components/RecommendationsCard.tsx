@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { Sparkles, Send, XCircle, Loader2 } from 'lucide-react';
+import { API_URL } from '../lib/api';
 
 interface Recommendation {
   id_vacante: string;
@@ -46,7 +47,7 @@ export default function RecommendationsCard({ email, idPerfil }: Props) {
 
   useEffect(() => {
     if (!email) return;
-    fetch(`http://localhost:8000/api/v1/candidates/recommendations?email=${encodeURIComponent(email)}&limit=7`)
+    fetch(`${API_URL}/api/v1/candidates/recommendations?email=${encodeURIComponent(email)}&limit=7`)
       .then(r => r.json())
       .then(d => setAllRecs(d.recommendations ?? []))
       .catch(() => setFetchError(true))
@@ -64,7 +65,7 @@ export default function RecommendationsCard({ email, idPerfil }: Props) {
     if (!idPerfil) return;
     setPostulando(rec.id_vacante);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/postulaciones', {
+      const res = await fetch(`${API_URL}/api/v1/postulaciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_perfil: idPerfil, id_vacante: rec.id_vacante }),

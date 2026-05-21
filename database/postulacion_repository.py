@@ -37,3 +37,17 @@ def obtener_postulaciones_por_perfil(id_perfil: int, db: Session) -> list[Postul
     return db.query(PostulacionDB).filter(
         PostulacionDB.id_perfil == id_perfil
     ).order_by(PostulacionDB.fecha_postulacion.desc()).all()
+
+
+def cancelar_postulacion(id_postulacion: int, id_perfil: int, db: Session) -> bool:
+    """Elimina una postulación verificando que pertenezca al perfil indicado.
+    Devuelve True si se eliminó, False si no se encontró."""
+    postulacion = db.query(PostulacionDB).filter(
+        PostulacionDB.id == id_postulacion,
+        PostulacionDB.id_perfil == id_perfil,   # seguridad: solo puede cancelar las suyas
+    ).first()
+    if not postulacion:
+        return False
+    db.delete(postulacion)
+    db.commit()
+    return True
